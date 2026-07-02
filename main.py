@@ -7237,13 +7237,21 @@ class ERPElSurcoApp(tk.Tk):
             self.cargar_despacho_resumen()
 
     def cargar_despacho_resumen(self):
-        try:
-            self.despacho_operacion_id = None
-            if not self.asegurar_operacion_despacho():
-                return
-            filtros = self.obtener_filtros_despacho()
-            data = self.api_get_despacho_resumen(self.despacho_operacion_id, filtros)
-            data = self.filtrar_resumen_despacho_local(data, filtros)
+        filtros = self.obtener_filtros_despacho()
+
+        def tarea():
+            activa = self.api_get_operacion_activa()
+            oid = self.safe_int((activa or {}).get("id"), None)
+            if not oid:
+                raise RuntimeError("No hay operacion abierta.")
+            data = self.api_get_despacho_resumen(oid, filtros)
+            return {
+                "operacion_activa": activa,
+                "resumen": self.filtrar_resumen_despacho_local(data, filtros),
+            }
+
+        def al_terminar(resultado):
+            data = resultado.get("resumen", {}) if isinstance(resultado, dict) else {}
             self.despacho_resumen = data
             operacion = data.get("operacion") or {}
             self.despacho_operacion_id = operacion.get("id")
@@ -7252,8 +7260,13 @@ class ERPElSurcoApp(tk.Tk):
             )
             self.aplicar_opciones_filtros_despacho(self.extraer_opciones_despacho(data))
             self.render_despacho_resumen(data)
-        except Exception as e:
-            messagebox.showerror("Despacho de viajes", str(e))
+
+        self.ejecutar_en_segundo_plano(
+            "Despacho de viajes",
+            "Buscando operacion activa y cargando tablero de despacho...",
+            tarea,
+            al_terminar,
+        )
 
     def filtrar_resumen_despacho_local(self, data, filtros):
         filtros = {key: value for key, value in (filtros or {}).items() if value not in (None, "")}
@@ -9099,8 +9112,10 @@ class ERPElSurcoApp(tk.Tk):
         if self.informes_tree is None:
             return
 
-        try:
-            data = self.api_get_operaciones_buque()
+        def tarea():
+            return self.api_get_operaciones_buque()
+
+        def al_terminar(data):
             self.informes_cache = data.get("data", []) if isinstance(data, dict) else []
 
             for item in self.informes_tree.get_children():
@@ -9120,8 +9135,13 @@ class ERPElSurcoApp(tk.Tk):
                         operacion.get("estado", ""),
                     ),
                 )
-        except Exception as e:
-            messagebox.showerror("Error informes", str(e))
+
+        self.ejecutar_en_segundo_plano(
+            "Informes",
+            "Buscando operaciones para informes...",
+            tarea,
+            al_terminar,
+        )
 
     def obtener_operacion_informe_seleccionada(self):
         if self.informes_tree is None:
@@ -9149,11 +9169,20 @@ class ERPElSurcoApp(tk.Tk):
         if not operacion:
             return
 
-        try:
-            data = self.api_get_resumen_control_operativo(operacion.get("id"))
+        operacion_id = operacion.get("id")
+
+        def tarea():
+            return self.api_get_resumen_control_operativo(operacion_id)
+
+        def al_terminar(data):
             self.mostrar_ventana_informe_operacion(data)
-        except Exception as e:
-            messagebox.showerror("Error informe", str(e))
+
+        self.ejecutar_en_segundo_plano(
+            "Informe operativo",
+            "Generando vista del informe...",
+            tarea,
+            al_terminar,
+        )
 
     def descargar_informe_seleccionado(self):
         operacion = self.obtener_operacion_informe_seleccionada()
@@ -9172,11 +9201,21 @@ class ERPElSurcoApp(tk.Tk):
         if not ruta:
             return
 
-        try:
-            self.api_descargar_reporte_buque(operacion.get("id"), formato, ruta)
+        operacion_id = operacion.get("id")
+
+        def tarea():
+            self.api_descargar_reporte_buque(operacion_id, formato, ruta)
+            return ruta
+
+        def al_terminar(ruta_generada):
             messagebox.showinfo("Informe exportado", f"Archivo generado correctamente:\n{ruta}")
-        except Exception as e:
-            messagebox.showerror("Exportar informe", str(e))
+
+        self.ejecutar_en_segundo_plano(
+            "Exportar informe",
+            f"Generando informe {formato_ui.upper()}...",
+            tarea,
+            al_terminar,
+        )
 
     def mostrar_ventana_informe_operacion(self, data):
         operacion = data.get("operacion", {})
