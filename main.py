@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -30,6 +31,25 @@ def app_user_data_path(*parts):
     path = os.path.join(base_dir, "XTRAVON_ONE", *parts)
     os.makedirs(os.path.dirname(path) if parts else path, exist_ok=True)
     return path
+
+
+def post_json_with_retry(url, payload, timeout=45, retries=1, retry_delay=0.8):
+    last_response = None
+    for intento in range(retries + 1):
+        try:
+            response = requests.post(url, json=payload, timeout=timeout)
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if intento >= retries:
+                raise
+            time.sleep(retry_delay)
+            continue
+
+        last_response = response
+        if response.status_code < 500 or intento >= retries:
+            return response
+        time.sleep(retry_delay)
+
+    return last_response
 
 
 SPLASH_DURATION_MS = 3000
@@ -2970,8 +2990,20 @@ class ERPElSurcoApp(tk.Tk):
 
     def buscar_operacion_activa_boletas(self):
         try:
-            abiertas = self.api_get_operaciones_buque(estado="ABIERTA")
+            data = self.api_get_operaciones_buque(estado="ABIERTA")
+            if isinstance(data, dict):
+                abiertas = data.get("data", [])
+            elif isinstance(data, list):
+                abiertas = data
+            else:
+                abiertas = []
+
             self.boletas_operaciones_abiertas = abiertas if isinstance(abiertas, list) else []
+            if not self.boletas_operaciones_abiertas:
+                activa = self.api_get_operacion_activa()
+                if isinstance(activa, dict) and activa.get("id"):
+                    self.boletas_operaciones_abiertas = [activa]
+
             opciones = [
                 f"{op.get('id')} | {op.get('codigo_operacion', '')} | {op.get('nombre_buque', '')}"
                 for op in self.boletas_operaciones_abiertas
@@ -9994,10 +10026,11 @@ def show_login_window(on_success):
                     mostrar_mfa("Ingrese el codigo de 6 digitos para continuar.")
                     return
                 payload["mfa_code"] = code
-            respuesta = requests.post(
+            respuesta = post_json_with_retry(
                 f"{API_BASE_DEFAULT}/rbac/login",
-                json=payload,
+                payload,
                 timeout=45,
+                retries=1,
             )
             if respuesta.status_code != 200:
                 try:
