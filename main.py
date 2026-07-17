@@ -2374,6 +2374,24 @@ class ERPElSurcoApp(tk.Tk):
         self.create_card(cards_frame_2, "DuraciÃ³n prom.", f"{self.safe_number(kpis.get('duracion_promedio_min')):,.2f} min", self.colors["accent"])
         self.create_card(cards_frame_2, "QR bloqueados", self.formatear_numero(kpis.get("qr_bloqueados")), self.colors["warning"])
 
+        silueta_panel = tk.Frame(
+            self.dashboard_body,
+            bg=self.colors["bg_card"],
+            highlightbackground=self.colors["border"],
+            highlightthickness=1,
+        )
+        silueta_panel.pack(fill="x", pady=(0, 18))
+        tk.Label(
+            silueta_panel,
+            text="Silueta del buque - pendiente por bodega",
+            font=("Segoe UI", 13, "bold"),
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_dark"],
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+        silueta_canvas = tk.Canvas(silueta_panel, bg=self.colors["bg_card"], height=230, highlightthickness=0)
+        silueta_canvas.pack(fill="x", padx=14, pady=(0, 14))
+        silueta_canvas.after(80, lambda c=silueta_canvas, rows=self.obtener_lista_grafico(graficos, "silueta_bodegas"): self.dibujar_silueta_pendiente_bodegas(c, rows))
+
         charts_grid = tk.Frame(self.dashboard_body, bg=self.colors["bg_main"])
         charts_grid.pack(fill="both", expand=True)
 
@@ -2476,6 +2494,64 @@ class ERPElSurcoApp(tk.Tk):
         canvas = tk.Canvas(panel, bg=self.colors["bg_card"], height=230, highlightthickness=0)
         canvas.pack(fill="both", expand=True, padx=12, pady=(0, 12))
         return canvas
+
+    def dibujar_silueta_pendiente_bodegas(self, canvas, rows):
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 620)
+        height = max(canvas.winfo_height(), 220)
+        rows = [row for row in (rows or []) if isinstance(row, dict)]
+        por_bodega = {}
+        for row in rows:
+            bodega = int(row.get("bodega_numero") or 0)
+            if bodega <= 0:
+                continue
+            capacidad = self.safe_number(row.get("capacidad_mt"), 0)
+            descargado = self.safe_number(row.get("descargado_mt", row.get("retirado_mt")), 0)
+            pendiente = self.safe_number(row.get("pendiente_mt"), max(capacidad - descargado, 0))
+            item = por_bodega.setdefault(bodega, {"capacidad": 0, "descargado": 0, "pendiente": 0, "productos": set()})
+            item["capacidad"] += capacidad
+            item["descargado"] += descargado
+            item["pendiente"] += max(pendiente, 0)
+            if row.get("producto"):
+                item["productos"].add(str(row.get("producto")))
+
+        y_top = 34
+        y_bottom = height - 24
+        y_mid = (y_top + y_bottom) / 2
+        x0 = 18
+        x1 = width - 18
+        canvas.create_polygon(x0, y_top, x1 - 45, y_top, x1, y_mid, x1 - 45, y_bottom, x0, y_bottom, fill=self.colors["bg_topbar"], outline=self.colors["accent"], width=2)
+        usable_w = x1 - x0 - 70
+        seg_w = usable_w / 5
+        palette = {1: self.colors["teal"], 2: self.colors["info"], 3: self.colors["accent_light"], 4: self.colors["success"], 5: self.colors["accent"]}
+
+        for idx, numero in enumerate([5, 4, 3, 2, 1]):
+            x = x0 + 16 + idx * seg_w
+            rx0 = x
+            rx1 = x + seg_w - 10
+            ry0 = y_top + 16
+            ry1 = y_bottom - 16
+            item = por_bodega.get(numero, {})
+            capacidad = max(self.safe_number(item.get("capacidad"), 0), 0)
+            descargado = max(self.safe_number(item.get("descargado"), 0), 0)
+            pendiente = max(self.safe_number(item.get("pendiente"), max(capacidad - descargado, 0)), 0)
+            pendiente_pct = (pendiente / capacidad * 100) if capacidad else 0
+            restante_ratio = min(max(pendiente / capacidad, 0), 1) if capacidad else 0
+            canvas.create_rectangle(rx0, ry0, rx1, ry1, fill=self.colors["bg_main"], outline=self.colors["border"])
+            if restante_ratio > 0:
+                fill_top = ry1 - (ry1 - ry0) * restante_ratio
+                canvas.create_rectangle(rx0, fill_top, rx1, ry1, fill=palette.get(numero, self.colors["accent"]), outline="")
+            if descargado > 0 and capacidad > 0:
+                nivel_y = ry1 - (ry1 - ry0) * restante_ratio
+                canvas.create_line(rx0 + 2, nivel_y, rx1 - 2, nivel_y, fill=self.colors["text_light"], width=2)
+            productos = ", ".join(sorted(item.get("productos", []))[:2]) if item else ""
+            label = f"B{numero}\nPend. {pendiente:,.0f} MT\n{pendiente_pct:,.1f}%"
+            if capacidad:
+                label += f"\nTot. {capacidad:,.0f}"
+            if productos:
+                label += f"\n{productos[:14]}"
+            canvas.create_text((rx0 + rx1) / 2 + 1, y_mid + 1, text=label, fill="#050B14", font=("Segoe UI", 8, "bold"), justify="center", width=max(rx1 - rx0 - 6, 62))
+            canvas.create_text((rx0 + rx1) / 2, y_mid, text=label, fill=self.colors["text_light"], font=("Segoe UI", 8, "bold"), justify="center", width=max(rx1 - rx0 - 6, 62))
 
     def normalizar_items(self, data, label_key, value_key, limit=8):
         if not isinstance(data, list):
@@ -4361,6 +4437,23 @@ class ERPElSurcoApp(tk.Tk):
         try:
             fecha = datetime.strptime(str(fecha_iso)[:10], "%Y-%m-%d").date()
             return f"{fecha.day} de {self.meses_es()[fecha.month - 1]} de {fecha.year}"
+        except Exception:
+            return str(fecha_iso)
+
+    def meses_en(self):
+        return [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+        ]
+
+    def fecha_larga_en(self, fecha_iso):
+        if not fecha_iso:
+            return ""
+        try:
+            fecha = datetime.strptime(str(fecha_iso)[:10], "%Y-%m-%d").date()
+            weekday = calendar.day_name[fecha.weekday()]
+            month = self.meses_en()[fecha.month - 1]
+            return f"{weekday}, {month} {fecha.day}, {fecha.year}"
         except Exception:
             return str(fecha_iso)
 
@@ -9042,6 +9135,19 @@ class ERPElSurcoApp(tk.Tk):
         self.informes_tree = None
         self.informes_cache = []
         self.informes_exportar_formato_var = tk.StringVar(value="PDF")
+        self.informes_tipo_reporte_var = tk.StringVar(value="Cliente ejecutivo")
+        self.informes_filter_vars = {
+            "empresa": tk.StringVar(),
+            "producto": tk.StringVar(),
+            "bodega_numero": tk.StringVar(),
+            "fecha_desde": tk.StringVar(),
+            "fecha_hasta": tk.StringVar(),
+        }
+        self.informes_fecha_display_vars = {
+            "fecha_desde": tk.StringVar(value="All dates"),
+            "fecha_hasta": tk.StringVar(value="All dates"),
+        }
+        self.informes_filter_widgets = {}
 
         self.create_page_title(
             self.content,
@@ -9075,8 +9181,41 @@ class ERPElSurcoApp(tk.Tk):
         tk.Label(header, text="Informes por buque", font=("Segoe UI", 13, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(side="left")
         ttk.Button(header, text="Buscar informes", style="Olive.TButton", command=self.cargar_informes_operaciones).pack(side="right")
 
+        filtros = tk.Frame(panel, bg=self.colors["bg_card"])
+        filtros.pack(fill="x", padx=14, pady=(0, 8))
+        campos_filtro = [
+            ("empresa", "Cliente", "combo"),
+            ("producto", "Producto", "combo"),
+            ("bodega_numero", "Bodega", "combo"),
+            ("fecha_desde", "Desde", "date"),
+            ("fecha_hasta", "Hasta", "date"),
+        ]
+        for idx, (key, label, kind) in enumerate(campos_filtro):
+            box = tk.Frame(filtros, bg=self.colors["bg_card"])
+            box.grid(row=idx // 5, column=idx % 5, sticky="ew", padx=5, pady=4)
+            tk.Label(box, text=label, font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
+            if kind == "date":
+                row = tk.Frame(box, bg=self.colors["bg_card"])
+                row.pack(fill="x")
+                ttk.Entry(row, textvariable=self.informes_fecha_display_vars[key], state="readonly").pack(side="left", fill="x", expand=True)
+                ttk.Button(row, text="...", style="Gray.TButton", width=4, command=lambda campo=key: self.abrir_selector_fecha_informe(campo)).pack(side="left", padx=(4, 0))
+            else:
+                widget = ttk.Combobox(box, textvariable=self.informes_filter_vars[key], values=[], state="readonly")
+                widget.pack(fill="x")
+                self.informes_filter_widgets[key] = widget
+            filtros.grid_columnconfigure(idx % 5, weight=1)
+
         actions = tk.Frame(panel, bg=self.colors["bg_card"])
         actions.pack(fill="x", padx=14, pady=(0, 8))
+        ttk.Combobox(
+            actions,
+            textvariable=self.informes_tipo_reporte_var,
+            values=["Cliente ejecutivo", "Operativo sintetizado"],
+            state="readonly",
+            width=24,
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Cargar filtros", style="Gray.TButton", command=self.cargar_filtros_informe_seleccionado).pack(side="left", padx=(0, 8))
+        ttk.Button(actions, text="Limpiar filtros", style="Gray.TButton", command=self.limpiar_filtros_informes).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="Ver informe", style="Gray.TButton", command=self.ver_informe_seleccionado).pack(side="left", padx=(0, 8))
         ttk.Combobox(actions, textvariable=self.informes_exportar_formato_var, values=["PDF", "Excel"], state="readonly", width=8).pack(side="left", padx=(0, 8))
         ttk.Button(actions, text="Exportar", style="Gray.TButton", command=self.descargar_informe_seleccionado).pack(side="left")
@@ -9107,6 +9246,107 @@ class ERPElSurcoApp(tk.Tk):
         table_scroll_x.grid(row=1, column=0, sticky="ew")
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
+
+    def tipo_reporte_informes_api(self):
+        valor = self.informes_tipo_reporte_var.get().strip().lower() if hasattr(self, "informes_tipo_reporte_var") else ""
+        return "ejecutivo" if "operativo" in valor else "cliente"
+
+    def obtener_parametros_informe(self):
+        params = {"tipo_reporte": self.tipo_reporte_informes_api()}
+        for key, var in getattr(self, "informes_filter_vars", {}).items():
+            value = var.get().strip()
+            if value:
+                params[key] = self.safe_int(value, value) if key == "bodega_numero" else value
+        return params
+
+    def limpiar_filtros_informes(self):
+        for var in getattr(self, "informes_filter_vars", {}).values():
+            var.set("")
+        if hasattr(self, "informes_fecha_display_vars"):
+            self.informes_fecha_display_vars["fecha_desde"].set("All dates")
+            self.informes_fecha_display_vars["fecha_hasta"].set("All dates")
+
+    def aplicar_opciones_filtros_informes(self, opciones):
+        mapa = {
+            "empresa": "empresas",
+            "producto": "productos",
+            "bodega_numero": "bodegas",
+        }
+        for key, option_key in mapa.items():
+            widget = self.informes_filter_widgets.get(key) if hasattr(self, "informes_filter_widgets") else None
+            if widget is not None:
+                valores = [""] + [str(v) for v in opciones.get(option_key, []) if v not in (None, "")]
+                widget["values"] = valores
+
+    def cargar_filtros_informe_seleccionado(self):
+        operacion = self.obtener_operacion_informe_seleccionada()
+        if not operacion:
+            return
+
+        def tarea():
+            return self.api_get_reporte_buque_filtros(operacion.get("id"))
+
+        def al_terminar(data):
+            opciones = data.get("opciones", {}) if isinstance(data, dict) else {}
+            self.aplicar_opciones_filtros_informes(opciones)
+
+        self.ejecutar_en_segundo_plano(
+            "Filtros de informe",
+            "Cargando opciones de cliente, producto, bodega y fechas...",
+            tarea,
+            al_terminar,
+        )
+
+    def abrir_selector_fecha_informe(self, campo):
+        popup = tk.Toplevel(self)
+        popup.title("Select date")
+        popup.geometry("390x220")
+        popup.configure(bg=self.colors["bg_card"])
+        popup.transient(self)
+        popup.grab_set()
+
+        hoy = date.today()
+        actual = self.informes_filter_vars.get(campo).get() if hasattr(self, "informes_filter_vars") else ""
+        try:
+            base = datetime.strptime(actual, "%Y-%m-%d").date() if actual else hoy
+        except Exception:
+            base = hoy
+
+        dia_var = tk.StringVar(value=str(base.day))
+        mes_var = tk.StringVar(value=self.meses_en()[base.month - 1])
+        anio_var = tk.StringVar(value=str(base.year))
+
+        contenido = tk.Frame(popup, bg=self.colors["bg_card"])
+        contenido.pack(fill="both", expand=True, padx=18, pady=18)
+        tk.Label(contenido, text="Report date range", font=("Segoe UI", 13, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w", pady=(0, 12))
+
+        fila = tk.Frame(contenido, bg=self.colors["bg_card"])
+        fila.pack(fill="x")
+        ttk.Combobox(fila, textvariable=dia_var, values=[str(i) for i in range(1, 32)], state="readonly", width=6).pack(side="left", padx=(0, 8))
+        ttk.Combobox(fila, textvariable=mes_var, values=self.meses_en(), state="readonly", width=16).pack(side="left", padx=(0, 8))
+        ttk.Combobox(fila, textvariable=anio_var, values=[str(i) for i in range(hoy.year - 5, hoy.year + 6)], state="readonly", width=8).pack(side="left")
+
+        def aplicar():
+            try:
+                mes = self.meses_en().index(mes_var.get()) + 1
+                fecha = date(int(anio_var.get()), mes, int(dia_var.get()))
+            except Exception:
+                messagebox.showerror("Invalid date", "Select a valid date.")
+                return
+            self.informes_filter_vars[campo].set(fecha.isoformat())
+            self.informes_fecha_display_vars[campo].set(self.fecha_larga_en(fecha.isoformat()))
+            popup.destroy()
+
+        def limpiar():
+            self.informes_filter_vars[campo].set("")
+            self.informes_fecha_display_vars[campo].set("All dates")
+            popup.destroy()
+
+        acciones = tk.Frame(contenido, bg=self.colors["bg_card"])
+        acciones.pack(fill="x", pady=(18, 0))
+        ttk.Button(acciones, text="Apply", style="Olive.TButton", command=aplicar).pack(side="left", padx=(0, 8))
+        ttk.Button(acciones, text="Clear", style="Gray.TButton", command=limpiar).pack(side="left", padx=(0, 8))
+        ttk.Button(acciones, text="Cancel", style="Gray.TButton", command=popup.destroy).pack(side="left")
 
     def cargar_informes_operaciones(self):
         if self.informes_tree is None:
@@ -9170,9 +9410,10 @@ class ERPElSurcoApp(tk.Tk):
             return
 
         operacion_id = operacion.get("id")
+        params = self.obtener_parametros_informe()
 
         def tarea():
-            return self.api_get_resumen_control_operativo(operacion_id)
+            return self.api_get_reporte_buque(operacion_id, params)
 
         def al_terminar(data):
             self.mostrar_ventana_informe_operacion(data)
@@ -9202,9 +9443,10 @@ class ERPElSurcoApp(tk.Tk):
             return
 
         operacion_id = operacion.get("id")
+        params = self.obtener_parametros_informe()
 
         def tarea():
-            self.api_descargar_reporte_buque(operacion_id, formato, ruta)
+            self.api_descargar_reporte_buque(operacion_id, formato, ruta, params)
             return ruta
 
         def al_terminar(ruta_generada):
@@ -9298,21 +9540,84 @@ class ERPElSurcoApp(tk.Tk):
         self.create_card(cards, "Descargado MT", self.formatear_numero(kpis.get("retirado_mt", self.safe_number(kpis.get("retirado_kg"), 0)), 2), self.colors["info"])
         self.create_card(cards, "Alertas", self.formatear_numero(kpis.get("alertas")), self.colors["warning"])
 
+        corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
+        corte_totales = corte_cliente.get("totales", {}) if isinstance(corte_cliente.get("totales"), dict) else {}
+        cards_cliente = tk.Frame(body, bg=self.colors["bg_main"])
+        cards_cliente.pack(fill="x", pady=(0, 12))
+        self.create_card(cards_cliente, "Cuota total MT", self.formatear_numero(corte_totales.get("cuota_tm"), 2), self.colors["accent_light"])
+        self.create_card(cards_cliente, "Pendiente MT", self.formatear_numero(corte_totales.get("pendiente_tm"), 2), self.colors["warning"])
+        self.create_card(cards_cliente, "Avance cuota", f"{self.safe_number(corte_totales.get('avance_pct')):,.2f}%", self.colors["success"])
+        self.create_card(cards_cliente, "Promedio MT/viaje", self.formatear_numero(kpis.get("promedio_mt_camion"), 2), self.colors["info"])
+
+        corte_rows = []
+        for row in corte_cliente.get("rows", []) or []:
+            corte_rows.append({
+                "empresa": row.get("empresa"),
+                "cuota_pct": row.get("cuota_pct"),
+                "cuota_tm": row.get("cuota_tm"),
+                "cuota_viajes": row.get("cuota_viajes"),
+                "retirado_tm": row.get("retirado_tm"),
+                "retirado_pct": row.get("retirado_pct"),
+                "retirado_viajes": row.get("retirado_viajes"),
+                "promedio_x_viaje": row.get("promedio_x_viaje"),
+                "pendiente_tm": row.get("pendiente_tm"),
+                "pendiente_viajes": row.get("pendiente_viajes"),
+            })
+
+        visual_panel = tk.Frame(body, bg=self.colors["bg_card"], highlightbackground=self.colors["border"], highlightthickness=1)
+        visual_panel.pack(fill="x", pady=(0, 12))
+        tk.Label(visual_panel, text="Vista ejecutiva", font=("Segoe UI", 13, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w", padx=14, pady=(12, 6))
+        visual_grid = tk.Frame(visual_panel, bg=self.colors["bg_card"])
+        visual_grid.pack(fill="x", padx=14, pady=(0, 14))
+        grafico_clientes = tk.Canvas(visual_grid, bg=self.colors["bg_card"], height=250, highlightthickness=0)
+        grafico_clientes.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        silueta_bodegas = tk.Canvas(visual_grid, bg=self.colors["bg_card"], height=250, highlightthickness=0)
+        silueta_bodegas.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+        visual_grid.grid_columnconfigure(0, weight=1)
+        visual_grid.grid_columnconfigure(1, weight=1)
+        grafico_clientes.after(80, lambda c=grafico_clientes, rows=corte_rows: self.dibujar_grafico_corte_cliente(c, rows))
+        silueta_bodegas.after(80, lambda c=silueta_bodegas, d=data: self.dibujar_silueta_bodegas_informe(c, d))
+
         self.crear_tabla_informe(
             body,
-            "Cuota vs descargado real",
-            ("cliente", "producto", "cuota_mt", "retirado_mt", "faltante_mt", "avance_pct", "guias"),
+            "CORTE FINAL - CUOTA VS DESCARGADO",
+            ("empresa", "cuota_pct", "cuota_tm", "cuota_viajes", "retirado_tm", "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm", "pendiente_viajes"),
             {
-                "cliente": "Cliente",
-                "producto": "Producto",
-                "cuota_mt": "Cuota MT",
-                "retirado_mt": "Descargado MT",
-                "faltante_mt": "Pendiente MT",
-                "avance_pct": "Avance %",
-                "guias": "Guias",
+                "empresa": "EMPRESA",
+                "cuota_pct": "CUOTA %",
+                "cuota_tm": "CUOTA T.M.",
+                "cuota_viajes": "CUOTA # VIAJES",
+                "retirado_tm": "RETIRADO T.M.",
+                "retirado_pct": "RETIRADO %",
+                "retirado_viajes": "RETIRADO # VIAJES",
+                "promedio_x_viaje": "PROMEDIO X VIAJE",
+                "pendiente_tm": "PENDIENTE T.M.",
+                "pendiente_viajes": "PENDIENTE VIAJES",
             },
-            cuotas,
+            corte_rows if corte_rows else cuotas,
         )
+
+        bodegas_cliente = data.get("reporte_bodegas_cliente", {}) if isinstance(data.get("reporte_bodegas_cliente"), dict) else {}
+        bodega_headers = list(bodegas_cliente.get("headers", []) or [])
+        bodega_columns = ["concepto"] + [f"col_{idx}" for idx, _header in enumerate(bodega_headers)]
+        bodega_headings = {"concepto": "CONCEPTO"}
+        for idx, header_text in enumerate(bodega_headers):
+            bodega_headings[f"col_{idx}"] = header_text
+        bodega_rows = []
+        for row in bodegas_cliente.get("rows", []) or []:
+            item = {"concepto": row.get("concepto")}
+            for idx, value in enumerate(row.get("valores", []) or []):
+                item[f"col_{idx}"] = value
+            bodega_rows.append(item)
+        if bodega_rows:
+            self.crear_tabla_informe(
+                body,
+                "REPORTE DE SALDOS POR BODEGA",
+                tuple(bodega_columns),
+                bodega_headings,
+                bodega_rows,
+                height=11,
+            )
 
         self.crear_tabla_informe(
             body,
@@ -9376,6 +9681,51 @@ class ERPElSurcoApp(tk.Tk):
         scroll_x.grid(row=1, column=0, sticky="ew")
         table_frame.grid_rowconfigure(0, weight=1)
         table_frame.grid_columnconfigure(0, weight=1)
+
+    def dibujar_grafico_corte_cliente(self, canvas, rows):
+        canvas.delete("all")
+        width = max(canvas.winfo_width(), 420)
+        height = max(canvas.winfo_height(), 230)
+        canvas.create_text(12, 14, anchor="w", text="Descargado vs pendiente por cliente", fill=self.colors["text_dark"], font=("Segoe UI", 10, "bold"))
+        items = sorted(rows or [], key=lambda row: self.safe_number(row.get("pendiente_tm"), 0), reverse=True)[:8]
+        if not items:
+            canvas.create_text(width / 2, height / 2, text="Sin datos para graficar", fill=self.colors["text_secondary"], font=("Segoe UI", 10, "bold"))
+            return
+        max_total = max(self.safe_number(row.get("cuota_tm"), 0) for row in items) or 1
+        left = 145
+        top = 42
+        bar_h = 16
+        gap = 9
+        right = width - 18
+        for idx, row in enumerate(items):
+            y = top + idx * (bar_h + gap)
+            if y + bar_h > height - 18:
+                break
+            cliente = str(row.get("empresa") or "SIN CLIENTE")[:18]
+            descargado = max(self.safe_number(row.get("retirado_tm"), 0), 0)
+            pendiente = max(self.safe_number(row.get("pendiente_tm"), 0), 0)
+            cuota = max(self.safe_number(row.get("cuota_tm"), 0), descargado + pendiente, 1)
+            canvas.create_text(10, y + bar_h / 2, anchor="w", text=cliente, fill=self.colors["text_dark"], font=("Segoe UI", 8, "bold"))
+            total_w = max(1, int((right - left) * cuota / max_total))
+            descargado_w = int(total_w * min(descargado / cuota, 1)) if cuota else 0
+            canvas.create_rectangle(left, y, left + total_w, y + bar_h, fill=self.colors["bg_main"], outline=self.colors["border"])
+            canvas.create_rectangle(left, y, left + max(descargado_w, 1), y + bar_h, fill=self.colors["success"], outline="")
+            if pendiente > 0:
+                canvas.create_rectangle(left + descargado_w, y, left + total_w, y + bar_h, fill=self.colors["warning"], outline="")
+            canvas.create_text(left + total_w + 6, y + bar_h / 2, anchor="w", text=f"{descargado:,.0f}/{cuota:,.0f}", fill=self.colors["text_secondary"], font=("Segoe UI", 8))
+
+    def dibujar_silueta_bodegas_informe(self, canvas, data):
+        detalle = data.get("graficos", {}).get("avance_bodegas_detalle") or data.get("bodegas", []) or []
+        rows = []
+        for row in detalle:
+            capacidad = self.safe_number(row.get("capacidad_mt"), 0)
+            retirado = self.safe_number(row.get("retirado_mt"), 0)
+            rows.append({
+                **row,
+                "descargado_mt": retirado,
+                "pendiente_mt": self.safe_number(row.get("faltante_mt"), max(capacidad - retirado, 0)),
+            })
+        self.dibujar_silueta_pendiente_bodegas(canvas, rows)
 
 install_frontend_modules(ERPElSurcoApp)
 
