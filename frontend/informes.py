@@ -19,6 +19,7 @@ def install_informes_screen(app_class):
     app_class.aplicar_opciones_filtros_informes = aplicar_opciones_filtros_informes
     app_class.limpiar_filtros_informes = limpiar_filtros_informes
     app_class.abrir_selector_fecha_informe = abrir_selector_fecha_informe
+    app_class.cargar_filtros_informe_desde_seleccion = cargar_filtros_informe_desde_seleccion
     app_class.render_informe_detalle = render_informe_detalle
     app_class.crear_tabla_informe = crear_tabla_informe
     app_class.crear_graficos_informe = crear_graficos_informe
@@ -88,6 +89,9 @@ def build_informes_busqueda_tab(self, parent):
         values=[
             "Cliente ejecutivo",
             "Operativo sintetizado",
+            "SOF y alertas",
+            "Productividad y documental",
+            "Marchamos por viaje",
         ],
         state="readonly",
         width=30,
@@ -150,6 +154,7 @@ def build_informes_busqueda_tab(self, parent):
     scroll_y = ttk.Scrollbar(table_frame, orient="vertical", command=self.informes_tree.yview)
     scroll_x = ttk.Scrollbar(table_frame, orient="horizontal", command=self.informes_tree.xview)
     self.informes_tree.configure(yscrollcommand=scroll_y.set, xscrollcommand=scroll_x.set)
+    self.informes_tree.bind("<<TreeviewSelect>>", self.cargar_filtros_informe_desde_seleccion)
     self.informes_tree.grid(row=0, column=0, sticky="nsew")
     scroll_y.grid(row=0, column=1, sticky="ns")
     scroll_x.grid(row=1, column=0, sticky="ew")
@@ -218,6 +223,11 @@ def cargar_informes_operaciones(self):
                     operacion.get("estado", ""),
                 ),
             )
+        hijos = self.informes_tree.get_children()
+        if len(hijos) == 1:
+            self.informes_tree.selection_set(hijos[0])
+            self.informes_tree.focus(hijos[0])
+            self.cargar_filtros_informe_seleccionado(silencioso=True)
         self.informes_estado_var.set(f"Operaciones disponibles: {len(self.informes_cache)}. Seleccione una y presione Ver informe o Exportar.")
 
     self.ejecutar_en_segundo_plano(
@@ -251,7 +261,7 @@ def obtener_operacion_informe_seleccionada(self):
 
 
 def obtener_parametros_informe(self):
-    params = self.obtener_parametros_informe()
+    params = {"tipo_reporte": _codigo_tipo_reporte(self.informes_tipo_reporte_var.get())}
     for key, var in getattr(self, "informes_filter_vars", {}).items():
         value = var.get().strip()
         if value:
@@ -275,8 +285,29 @@ def aplicar_opciones_filtros_informes(self, opciones):
             widget["values"] = [""] + [str(v) for v in opciones.get(option_key, []) if v not in (None, "")]
 
 
-def cargar_filtros_informe_seleccionado(self):
-    operacion = self.obtener_operacion_informe_seleccionada()
+def cargar_filtros_informe_desde_seleccion(self, _event=None):
+    self.cargar_filtros_informe_seleccionado(silencioso=True)
+
+
+def cargar_filtros_informe_seleccionado(self, silencioso=False):
+    if silencioso:
+        if self.informes_tree is None:
+            return
+        seleccion = self.informes_tree.selection()
+        if not seleccion:
+            return
+        valores = self.informes_tree.item(seleccion[0], "values")
+        operacion_id = self.safe_int(valores[0], None) if valores else None
+        operacion = next(
+            (
+                item
+                for item in self.informes_cache
+                if self.safe_int(item.get("id"), None) == operacion_id
+            ),
+            {"id": operacion_id} if operacion_id else None,
+        )
+    else:
+        operacion = self.obtener_operacion_informe_seleccionada()
     if not operacion:
         return
 
@@ -399,7 +430,7 @@ def descargar_informe_seleccionado(self):
     if not ruta:
         return
 
-    params = {"tipo_reporte": _codigo_tipo_reporte(self.informes_tipo_reporte_var.get())}
+    params = self.obtener_parametros_informe()
 
     def tarea():
         return self.api_descargar_reporte_buque(operacion.get("id"), formato, ruta, params)
@@ -695,7 +726,7 @@ def render_informe_detalle(self, data):
             ]
         )
 
-    elif tipo_reporte == "alertas":
+    elif tipo_reporte in ("alertas", "sof_alertas"):
         alertas_por_tipo = _conteo_por(alertas, "tipo")
         alertas_por_severidad = _conteo_por(alertas, "severidad")
         sof_demoras = [row for row in sof if row.get("tipo") == "DEMORA"]
@@ -711,7 +742,7 @@ def render_informe_detalle(self, data):
             ]
         )
 
-    elif tipo_reporte == "productividad":
+    elif tipo_reporte in ("productividad", "productividad_documental"):
         duraciones = graficos.get("duracion_por_camion", [])
         promedio = sum(self.safe_number(row.get("duracion_min")) for row in duraciones) / len(duraciones) if duraciones else 0
         toneladas_por_viaje = self.safe_number(kpis.get("retirado_mt")) / self.safe_number(kpis.get("completas"), 1) if self.safe_number(kpis.get("completas")) else 0
@@ -758,7 +789,7 @@ def render_informe_detalle(self, data):
             ]
         )
 
-    if tipo_reporte not in ("ejecutivo", "cuotas", "bodegas", "alertas", "productividad", "documental", "marchamos"):
+    if tipo_reporte not in ("ejecutivo", "cuotas", "bodegas", "alertas", "sof_alertas", "productividad", "productividad_documental", "documental", "marchamos"):
         self.create_card(cards, "Guias", self.formatear_numero(kpis.get("total_guias")), self.colors["accent"])
         self.create_card(cards, "Completas", self.formatear_numero(kpis.get("completas")), self.colors["success"])
         self.create_card(cards, "Descargado MT", self.formatear_numero(kpis.get("retirado_mt"), 2), self.colors["info"])
@@ -782,7 +813,7 @@ def render_informe_detalle(self, data):
             cuotas,
         )
 
-    if tipo_reporte in ("ejecutivo", "productividad"):
+    if tipo_reporte in ("ejecutivo", "productividad", "productividad_documental"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Resumen por producto",
@@ -804,7 +835,7 @@ def render_informe_detalle(self, data):
             height=9,
         )
 
-    if tipo_reporte in ("ejecutivo", "alertas", "documental"):
+    if tipo_reporte in ("ejecutivo", "alertas", "sof_alertas", "documental", "productividad_documental"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Alertas operativas",
@@ -814,13 +845,23 @@ def render_informe_detalle(self, data):
             height=8,
         )
 
-    if tipo_reporte == "documental":
+    if tipo_reporte in ("documental", "productividad_documental"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Estado documental",
             ("estado", "etapa_qr", "aprobada", "guias"),
             {"estado": "Estado", "etapa_qr": "Etapa QR", "aprobada": "Aprobada", "guias": "Guias"},
             data.get("documental", []),
+            height=10,
+        )
+
+    if tipo_reporte == "sof_alertas":
+        self.crear_tabla_informe(
+            self.informes_detalle_body,
+            "SOF por categoria y subcategoria",
+            ("tipo", "subcategoria", "bodega_numero", "eventos", "horas", "fecha_desde", "fecha_hasta"),
+            {"tipo": "Tipo", "subcategoria": "Subcategoria", "bodega_numero": "Bodega", "eventos": "Eventos", "horas": "Horas", "fecha_desde": "Desde", "fecha_hasta": "Hasta"},
+            sof,
             height=10,
         )
 
@@ -924,7 +965,9 @@ def _lectura_reporte(tipo):
         "cuotas": "Control de cuota vs descargado: compara cuota por cliente/producto contra lo realmente descargado, pendiente, sobrecuotas, avance, viajes y riesgo operativo.",
         "bodegas": "Descarga por bodega: analiza capacidad, descargado, pendiente de descarga, avance porcentual, viajes y distribucion del trabajo por bodega.",
         "alertas": "Alertas operativas: resume severidades, tipos de alerta, eventos de demora, horas acumuladas e incidentes que requieren seguimiento.",
+        "sof_alertas": "SOF y alertas: consolida el Statement of Facts con alertas operativas para reducir reportes sin perder eventos, demoras ni riesgos.",
         "productividad": "Productividad por camion: mide viajes, duracion promedio, toneladas por viaje, tendencias diarias y rendimiento por producto/camion.",
+        "productividad_documental": "Productividad y documental: unifica rendimiento por camion, tendencia, producto y estado documental para seguimiento ejecutivo.",
         "documental": "Diferencias documentales: muestra aprobaciones, pendientes, estados operativos, etapas QR y riesgos de trazabilidad documental.",
         "marchamos": "Marchamos por viaje: lista los marchamos capturados en tercer escaneo, vinculados a guia, empresa, producto, chofer, placa, peso y bodega/tolva.",
     }
@@ -935,6 +978,8 @@ def _codigo_tipo_reporte(label):
     mapa = {
         "Cliente ejecutivo": "cliente",
         "Operativo sintetizado": "ejecutivo",
+        "SOF y alertas": "sof_alertas",
+        "Productividad y documental": "productividad_documental",
         "Resumen ejecutivo por buque": "ejecutivo",
         "SOF - Statement of Facts": "sof",
         "Cuotas vs descargado": "cuotas",
