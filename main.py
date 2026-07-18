@@ -4335,7 +4335,7 @@ class ERPElSurcoApp(tk.Tk):
         charts.pack(fill="both", expand=True, pady=(0, 12))
         clientes_grafico = graficos.get("cuota_vs_retiro_cliente") or graficos.get("retiro_por_cliente") or clientes
         self.crear_chart_barras(charts, "Cuota vs descargado por cliente", clientes_grafico, "empresa", "retirado_mt", 0, 0)
-        self.crear_chart_barras(charts, "Pendiente por cliente", clientes_grafico, "empresa", "faltante_mt", 0, 1)
+        self.crear_chart_barras(charts, "Saldo por cliente", clientes_grafico, "empresa", "saldo_mt", 0, 1)
         self.crear_chart_circular(charts, "Estado de guias", graficos.get("estado_guias", []), "estado", "valor", 0, 2)
         self.crear_chart_barras(charts, "Descargado por producto", graficos.get("retiro_por_producto", []), "producto", "retirado_mt", 1, 0)
         self.crear_chart_lineal(charts, "Tendencia diaria", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", 1, 1)
@@ -4358,7 +4358,7 @@ class ERPElSurcoApp(tk.Tk):
             "producto": "Producto",
             "cuota": "Cuota MT",
             "retirado": "Descargado MT",
-            "faltante": "Pendiente descarga MT",
+            "faltante": "Pendiente/Sobredescarga MT",
             "avance": "Avance %",
             "viajes": "Viajes",
         }
@@ -4397,7 +4397,7 @@ class ERPElSurcoApp(tk.Tk):
                 row.get("producto", ""),
                 self.formatear_numero(row.get("cuota_mt"), 2),
                 self.formatear_numero(row.get("retirado_mt"), 2),
-                self.formatear_numero(row.get("faltante_mt"), 2),
+                self.formatear_numero(row.get("saldo_mt", row.get("faltante_mt")), 2),
                 f"{self.safe_number(row.get('avance_pct')):,.2f}%",
                 self.formatear_numero(row.get("viajes")),
                 ))
@@ -9492,7 +9492,9 @@ class ERPElSurcoApp(tk.Tk):
                 "producto": "Cuota general" if producto.upper() in ("", "TODOS", "ALL") else producto,
                 "cuota_mt": row.get("cuota_mt", self.safe_number(row.get("cuota_kg"), 0)),
                 "retirado_mt": row.get("retirado_mt", self.safe_number(row.get("retirado_kg"), 0)),
+                "saldo_mt": row.get("saldo_mt", row.get("faltante_mt", self.safe_number(row.get("diferencia_kg") or row.get("faltante_kg"), 0))),
                 "faltante_mt": row.get("faltante_mt", self.safe_number(row.get("diferencia_kg") or row.get("faltante_kg"), 0)),
+                "sobre_descarga_mt": row.get("sobre_descarga_mt"),
                 "avance_pct": row.get("avance_pct"),
                 "guias": row.get("guias", row.get("camiones")),
             })

@@ -490,7 +490,9 @@ def render_informe_detalle(self, data):
             "bodega_numero": row.get("bodega_numero"),
             "cuota_mt": row.get("cuota_mt"),
             "retirado_mt": row.get("retirado_mt"),
+            "saldo_mt": row.get("saldo_mt", row.get("faltante_mt")),
             "faltante_mt": row.get("faltante_mt"),
+            "sobre_descarga_mt": row.get("sobre_descarga_mt"),
             "avance_pct": row.get("avance_pct"),
             "guias": row.get("guias"),
         }
@@ -626,7 +628,7 @@ def render_informe_detalle(self, data):
         self.crear_graficos_informe(
             [
                 ("Descargado por cliente", cuotas, "cliente", "retirado_mt", "barras"),
-                ("Pendiente por cliente", cuotas, "cliente", "faltante_mt", "barras"),
+                ("Saldo por cliente", corte_rows, "empresa", "pendiente_tm", "barras"),
                 ("Pendiente por bodega", graficos.get("faltante_bodegas", []), "bodega", "faltante_mt", "barras"),
                 ("Tendencia diaria MT", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", "lineal"),
             ]
@@ -696,17 +698,17 @@ def render_informe_detalle(self, data):
     elif tipo_reporte == "cuotas":
         total_cuota = sum(self.safe_number(row.get("cuota_mt")) for row in cuotas)
         total_descargado = sum(self.safe_number(row.get("retirado_mt")) for row in cuotas)
-        total_pendiente = sum(self.safe_number(row.get("faltante_mt")) for row in cuotas)
+        total_pendiente = sum(self.safe_number(row.get("saldo_mt", row.get("faltante_mt"))) for row in cuotas)
         sobrecuotas = sum(1 for row in cuotas if self.safe_number(row.get("retirado_mt")) > self.safe_number(row.get("cuota_mt")) > 0)
         avance = (total_descargado / total_cuota * 100) if total_cuota else 0
         self.create_card(cards, "Cuota MT", self.formatear_numero(total_cuota, 2), self.colors["accent"])
         self.create_card(cards, "Descargado MT", self.formatear_numero(total_descargado, 2), self.colors["success"])
-        self.create_card(cards, "Pendiente MT", self.formatear_numero(total_pendiente, 2), self.colors["warning"])
+        self.create_card(cards, "Saldo MT", self.formatear_numero(total_pendiente, 2), self.colors["warning"])
         self.create_card(cards, "Sobrecuotas", self.formatear_numero(sobrecuotas), self.colors["danger"])
         self.crear_graficos_informe(
             [
                 ("Descargado por cliente/producto", cuotas_grafico, "cliente_producto", "retirado_mt", "barras"),
-                ("Pendiente por cliente/producto", cuotas_grafico, "cliente_producto", "faltante_mt", "barras"),
+                ("Saldo por cliente/producto", cuotas_grafico, "cliente_producto", "saldo_mt", "barras"),
                 ("Avance por cliente/producto", cuotas_grafico, "cliente_producto", "avance_pct", "barras"),
                 ("Viajes por cliente/producto", cuotas_grafico, "cliente_producto", "guias", "barras"),
             ]
@@ -808,8 +810,8 @@ def render_informe_detalle(self, data):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Cuota vs descargado real",
-            ("cliente", "producto", "bodega", "cuota_mt", "retirado_mt", "faltante_mt", "avance_pct", "guias"),
-            {"cliente": "Cliente", "producto": "Producto", "bodega": "Bodega", "cuota_mt": "Cuota MT", "retirado_mt": "Descargado MT", "faltante_mt": "Pendiente MT", "avance_pct": "Avance %", "guias": "Guias"},
+            ("cliente", "producto", "bodega", "cuota_mt", "retirado_mt", "saldo_mt", "avance_pct", "guias"),
+            {"cliente": "Cliente", "producto": "Producto", "bodega": "Bodega", "cuota_mt": "Cuota MT", "retirado_mt": "Descargado MT", "saldo_mt": "Pendiente/Sobredescarga MT", "avance_pct": "Avance %", "guias": "Guias"},
             cuotas,
         )
 
