@@ -2537,7 +2537,7 @@ class ERPElSurcoApp(tk.Tk):
             pendiente = max(self.safe_number(item.get("pendiente"), max(capacidad - descargado, 0)), 0)
             pendiente_pct = (pendiente / capacidad * 100) if capacidad else 0
             restante_ratio = min(max(pendiente / capacidad, 0), 1) if capacidad else 0
-            canvas.create_rectangle(rx0, ry0, rx1, ry1, fill=self.colors["bg_main"], outline=self.colors["border"])
+            canvas.create_rectangle(rx0, ry0, rx1, ry1, fill="#FFFFFF", outline=self.colors["border"])
             if restante_ratio > 0:
                 fill_top = ry1 - (ry1 - ry0) * restante_ratio
                 canvas.create_rectangle(rx0, fill_top, rx1, ry1, fill=palette.get(numero, self.colors["accent"]), outline="")
@@ -2550,8 +2550,7 @@ class ERPElSurcoApp(tk.Tk):
                 label += f"\nTot. {capacidad:,.0f}"
             if productos:
                 label += f"\n{productos[:14]}"
-            canvas.create_text((rx0 + rx1) / 2 + 1, y_mid + 1, text=label, fill="#050B14", font=("Segoe UI", 8, "bold"), justify="center", width=max(rx1 - rx0 - 6, 62))
-            canvas.create_text((rx0 + rx1) / 2, y_mid, text=label, fill=self.colors["text_light"], font=("Segoe UI", 8, "bold"), justify="center", width=max(rx1 - rx0 - 6, 62))
+            canvas.create_text((rx0 + rx1) / 2, y_mid, text=label, fill="#050B14", font=("Segoe UI", 8, "bold"), justify="center", width=max(rx1 - rx0 - 6, 62))
 
     def normalizar_items(self, data, label_key, value_key, limit=8):
         if not isinstance(data, list):
@@ -2719,18 +2718,37 @@ class ERPElSurcoApp(tk.Tk):
             for idx, (label, value) in enumerate(items):
                 extent = 360 * value / total
                 color = self.color_bodega(label) if "bodega" in str(title).lower() or self.es_label_bodega(label) else palette[idx % len(palette)]
-                canvas.create_arc(
-                    x0,
-                    y0,
-                    x0 + size,
-                    y0 + size,
-                    start=start,
-                    extent=-extent,
-                    fill=color,
-                    outline=self.colors["bg_card"],
-                    width=2,
-                )
+                if len(items) == 1 or abs(extent) >= 359.9:
+                    canvas.create_oval(
+                        x0,
+                        y0,
+                        x0 + size,
+                        y0 + size,
+                        fill=color,
+                        outline=self.colors["bg_card"],
+                        width=2,
+                    )
+                else:
+                    canvas.create_arc(
+                        x0,
+                        y0,
+                        x0 + size,
+                        y0 + size,
+                        start=start,
+                        extent=-extent,
+                        fill=color,
+                        outline=self.colors["bg_card"],
+                        width=2,
+                    )
                 start -= extent
+
+            canvas.create_text(
+                x0 + size / 2,
+                y0 + size / 2,
+                text=self.formatear_numero(total),
+                fill=self.colors["bg_main"],
+                font=("Segoe UI", 10, "bold"),
+            )
 
             legend_x = x0 + size + 24
             legend_y = y0 + 8
