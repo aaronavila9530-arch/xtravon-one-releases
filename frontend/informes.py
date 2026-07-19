@@ -732,17 +732,23 @@ def render_informe_detalle(self, data):
         alertas_por_tipo = _conteo_por(alertas, "tipo")
         alertas_por_severidad = _conteo_por(alertas, "severidad")
         sof_demoras = [row for row in sof if row.get("tipo") == "DEMORA"]
+        charts = [
+            ("Alertas por tipo", alertas_por_tipo, "label", "valor", "barras"),
+            ("Alertas por severidad", alertas_por_severidad, "label", "valor", "circular"),
+        ]
+        if sof_demoras:
+            charts.append(("Horas de demora SOF", sof_demoras, "subcategoria", "horas", "barras"))
+        if tipo_reporte == "sof_alertas":
+            charts.extend([
+                ("Saldo por cliente/producto", cuotas_grafico, "cliente_producto", "saldo_mt", "barras"),
+                ("Pendiente por bodega/producto", bodegas_grafico, "bodega_producto", "faltante_mt", "barras"),
+                ("Descargado por producto", productos, "producto", "retirado_mt", "barras"),
+            ])
         self.create_card(cards, "Alertas", self.formatear_numero(len(alertas)), self.colors["danger"])
         self.create_card(cards, "Severidad alta", self.formatear_numero(sum(1 for row in alertas if row.get("severidad") == "ALTA")), self.colors["danger"])
         self.create_card(cards, "Eventos demora", self.formatear_numero(sum(self.safe_number(row.get("eventos")) for row in sof_demoras)), self.colors["warning"])
         self.create_card(cards, "Horas demora", self.formatear_numero(sum(self.safe_number(row.get("horas")) for row in sof_demoras), 2), self.colors["info"])
-        self.crear_graficos_informe(
-            [
-                ("Alertas por tipo", alertas_por_tipo, "label", "valor", "barras"),
-                ("Alertas por severidad", alertas_por_severidad, "label", "valor", "circular"),
-                ("Horas de demora SOF", sof_demoras, "subcategoria", "horas", "barras"),
-            ]
-        )
+        self.crear_graficos_informe(charts)
 
     elif tipo_reporte in ("productividad", "productividad_documental"):
         duraciones = graficos.get("duracion_por_camion", [])
@@ -797,7 +803,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Descargado MT", self.formatear_numero(kpis.get("retirado_mt"), 2), self.colors["info"])
         self.create_card(cards, "Pendiente MT", self.formatear_numero(kpis.get("faltante_mt"), 2), self.colors["warning"])
 
-    if tipo_reporte in ("ejecutivo", "bodegas"):
+    if tipo_reporte in ("ejecutivo", "bodegas", "sof_alertas"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Descarga por bodega",
@@ -806,7 +812,7 @@ def render_informe_detalle(self, data):
             bodegas,
         )
 
-    if tipo_reporte in ("ejecutivo", "cuotas"):
+    if tipo_reporte in ("ejecutivo", "cuotas", "sof_alertas"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Cuota vs descargado real",
@@ -815,7 +821,7 @@ def render_informe_detalle(self, data):
             cuotas,
         )
 
-    if tipo_reporte in ("ejecutivo", "productividad", "productividad_documental"):
+    if tipo_reporte in ("ejecutivo", "productividad", "productividad_documental", "sof_alertas"):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Resumen por producto",
@@ -857,7 +863,7 @@ def render_informe_detalle(self, data):
             height=10,
         )
 
-    if tipo_reporte == "sof_alertas":
+    if tipo_reporte == "sof_alertas" and sof:
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "SOF por categoria y subcategoria",
