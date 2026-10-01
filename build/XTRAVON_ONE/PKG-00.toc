@@ -1,0 +1,71 @@
+('C:\\Users\\Aaron Avila\\Documents\\ERP EL Surco\\build\\XTRAVON_ONE\\XTRAVON '
+ 'ONE.pkg',
+ {'BINARY': True,
+  'DATA': True,
+  'EXECUTABLE': True,
+  'EXTENSION': True,
+  'PYMODULE': True,
+  'PYSOURCE': True,
+  'PYZ': False,
+  'SPLASH': True,
+  'SYMLINK': False},
+ [('pyi-contents-directory _internal', '', 'OPTION'),
+  ('PYZ-00.pyz',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\PYZ-00.pyz',
+   'PYZ'),
+  ('struct',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\localpycs\\struct.pyc',
+   'PYMODULE'),
+  ('pyimod01_archive',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\localpycs\\pyimod01_archive.pyc',
+   'PYMODULE'),
+  ('pyimod02_importers',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\localpycs\\pyimod02_importers.pyc',
+   'PYMODULE'),
+  ('pyimod03_ctypes',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\localpycs\\pyimod03_ctypes.pyc',
+   'PYMODULE'),
+  ('pyimod04_pywin32',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\build\\XTRAVON_ONE\\localpycs\\pyimod04_pywin32.pyc',
+   'PYMODULE'),
+  ('pyiboot01_bootstrap',
+   'C:\\Users\\Aaron '
+   'Avila\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\PyInstaller\\loader\\pyiboot01_bootstrap.py',
+   'PYSOURCE'),
+  ('xtravon_tkinter_runtime',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL '
+   'Surco\\installer\\runtime_hooks\\xtravon_tkinter_runtime.py',
+   'PYSOURCE'),
+  ('pyi_rth_inspect',
+   'C:\\Users\\Aaron '
+   'Avila\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
+   'PYSOURCE'),
+  ('pyi_rth__tkinter',
+   'C:\\Users\\Aaron '
+   'Avila\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth__tkinter.py',
+   'PYSOURCE'),
+  ('pyi_rth_pkgutil',
+   'C:\\Users\\Aaron '
+   'Avila\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pkgutil.py',
+   'PYSOURCE'),
+  ('pyi_rth_multiprocessing',
+   'C:\\Users\\Aaron '
+   'Avila\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_multiprocessing.py',
+   'PYSOURCE'),
+  ('main',
+   'C:\\Users\\Aaron Avila\\Documents\\ERP EL Surco\\main.py',
+   'PYSOURCE')],
+ 'python311.dll',
+ True,
+ False,
+ False,
+ [],
+ None,
+ None,
+ None)

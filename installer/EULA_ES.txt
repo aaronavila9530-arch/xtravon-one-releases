@@ -1,0 +1,65 @@
+CONTRATO DE LICENCIA DE USUARIO FINAL
+XTRAVON ONE | GRAIN CONTROL
+Version 1.0.0
+
+IMPORTANTE: Lea cuidadosamente este Contrato de Licencia de Usuario Final antes de instalar, copiar, ejecutar o utilizar XTRAVON ONE. Al instalar o utilizar el software, usted acepta quedar vinculado por los terminos de este contrato. Si no acepta estos terminos, no instale ni utilice el software.
+
+1. PARTES
+Este contrato regula el uso de XTRAVON ONE | GRAIN CONTROL, plataforma tecnologica provista por QORA SYSTEMS en alianza con MSL Marine Surveyors and Logistics Group, en adelante "EL PROVEEDOR", y la persona fisica o juridica que instala, accede o utiliza el software, en adelante "EL CLIENTE" o "EL USUARIO".
+
+2. OBJETO
+XTRAVON ONE es una plataforma de control operativo, trazabilidad, inteligencia de riesgo y gestion documental para operaciones logisticas, portuarias, graneleras y maritimas. El software permite gestionar operaciones de buque, cuotas, guias, QR, escaneos, SOF, informes, tableros ejecutivos, controles de patio, auditoria operativa, permisos, roles y modulos de asistencia inteligente.
+
+3. LICENCIA DE USO
+EL PROVEEDOR otorga a EL CLIENTE una licencia limitada, revocable, no exclusiva, no transferible y no sublicenciable para utilizar el software conforme al alcance contratado, usuarios autorizados, paises, instalaciones, modulos y condiciones comerciales vigentes. Esta licencia no implica venta del software, codigo fuente, marca, know-how, algoritmos, estructura de datos, disenos, documentacion tecnica ni propiedad intelectual asociada.
+
+4. PROPIEDAD INTELECTUAL
+Todos los derechos de propiedad intelectual, industrial, comercial, tecnica y documental relacionados con XTRAVON ONE, incluyendo pantallas, flujos, codigo, arquitectura, base logica, diseno visual, reportes, modelos, algoritmos, marcas, iconos, manuales, instaladores y componentes derivados, pertenecen a EL PROVEEDOR o a sus licenciantes. EL CLIENTE no adquiere ningun derecho distinto al uso autorizado.
+
+5. RESTRICCIONES
+EL CLIENTE y EL USUARIO no podran:
+a) Copiar, revender, sublicenciar, alquilar, ceder, distribuir o explotar comercialmente el software sin autorizacion escrita.
+b) Realizar ingenieria inversa, descompilar, desmontar, extraer codigo, interceptar API, replicar flujos o crear productos derivados.
+c) Eludir controles de seguridad, roles, QR, hash, MFA, biometria, auditoria o permisos.
+d) Utilizar el software para operaciones ilegales, fraude documental, manipulacion de pesajes, alteracion de guias, simulacion de escaneos o falsificacion de evidencia.
+e) Remover marcas, avisos legales, identificadores de version, registros de auditoria o mecanismos de trazabilidad.
+f) Compartir credenciales, tokens, codigos MFA, QR, claves o accesos personales con terceros no autorizados.
+
+6. SEGURIDAD, CREDENCIALES Y MFA
+El software puede utilizar autenticacion por usuario y contrasena, biometria del dispositivo, Microsoft Authenticator, codigos de un solo uso, almacenamiento protegido del sistema operativo, QR firmados, claves secretas y registros de auditoria. EL CLIENTE es responsable de custodiar usuarios, dispositivos, telefonos, handhelds, claves, codigos y politicas internas de acceso.
+
+7. DATOS, OPERACION Y RESPONSABILIDAD DEL CLIENTE
+EL CLIENTE es responsable por la exactitud, legitimidad y oportunidad de los datos ingresados al sistema, incluyendo informacion de buques, clientes, guias, choferes, placas, pesos, marchamos, bodegas, cuotas, eventos, SOF, aprobaciones y evidencias. Las decisiones operativas, comerciales, logisticas, portuarias, legales y de seguridad tomadas con base en el software son responsabilidad de EL CLIENTE.
+
+8. DISPONIBILIDAD Y MODO OFFLINE
+XTRAVON ONE puede incluir capacidades offline para continuidad operativa en dispositivos moviles o handhelds. Sin embargo, la sincronizacion depende de energia, red, conectividad, disponibilidad del backend, configuracion del dispositivo, permisos, integridad del QR, almacenamiento local y condiciones externas. EL PROVEEDOR no garantiza conectividad continua en zonas portuarias, patios, bodegas, buques o areas de baja cobertura.
+
+9. INTEGRACIONES DE TERCEROS
+El software puede integrarse con servicios externos como correo electronico, WhatsApp Business, Twilio, SendGrid, OpenAI, APIs meteorologicas, AIS, mapas, servicios de nube, bases de datos, sistemas operativos y autenticadores. EL PROVEEDOR no controla la disponibilidad, precios, politicas, cambios, limites, interrupciones o exactitud de dichos terceros. EL CLIENTE debera cumplir los terminos de cada proveedor externo.
+
+10. INTELIGENCIA ARTIFICIAL Y P.O.R.T.I.A
+Los modulos de asistencia inteligente, incluyendo P.O.R.T.I.A, ofrecen apoyo operativo, analitico y predictivo. Sus respuestas pueden basarse en datos internos, informacion publica, modelos de IA o reglas operativas. Dichas respuestas son referenciales y no sustituyen el criterio profesional, capitania, autoridades portuarias, terminales, aseguradoras, peritos, inspectores, supervisores ni decisiones humanas autorizadas.
+
+11. REPORTES Y EVIDENCIA
+Los reportes, indicadores, graficos, archivos PDF, Excel, Word, CSV, imagenes, QR, logs y auditorias generados por el sistema dependen de la informacion cargada y sincronizada. EL CLIENTE debe validar su integridad antes de utilizarlos en reclamos, liquidaciones, auditorias, seguros, procesos legales o decisiones comerciales.
+
+12. LIMITACION DE RESPONSABILIDAD
+En la maxima medida permitida por la ley, EL PROVEEDOR no sera responsable por perdidas indirectas, lucro cesante, perdida de datos, demoras portuarias, interrupciones operativas, decisiones comerciales, reclamos de terceros, sanciones, diferencias de carga, errores de usuario, fallos de conectividad, mal uso de QR, dispositivos comprometidos o informacion inexacta ingresada por EL CLIENTE.
+
+13. SOPORTE, ACTUALIZACIONES Y CAMBIOS
+EL PROVEEDOR podra liberar actualizaciones, parches, mejoras, nuevas versiones, cambios de seguridad, cambios de interfaz o ajustes tecnicos. Algunas mejoras pueden requerir actualizacion del instalador, app movil, backend, base de datos, licencias, variables de entorno o configuraciones externas. El soporte y el alcance de actualizaciones se regiran por el acuerdo comercial correspondiente.
+
+14. CONFIDENCIALIDAD
+EL CLIENTE y EL USUARIO deberan mantener confidencial toda informacion tecnica, comercial, operativa, documental, de seguridad y de negocio relacionada con el software, incluyendo credenciales, manuales, arquitectura, precios, configuraciones, datos de operacion, flujos y reportes no publicos.
+
+15. CUMPLIMIENTO LEGAL
+EL CLIENTE es responsable de utilizar XTRAVON ONE conforme a leyes aplicables de proteccion de datos, comercio, transporte, puertos, aduanas, seguridad, trabajo, propiedad intelectual, privacidad, telecomunicaciones y regulaciones sectoriales del pais donde opere.
+
+16. TERMINACION
+EL PROVEEDOR podra suspender o terminar la licencia ante incumplimiento de este contrato, falta de pago, uso indebido, violacion de seguridad, intento de copia, abuso de integraciones, alteracion no autorizada o riesgo operativo grave. Al terminar, EL CLIENTE debera cesar el uso del software y devolver o eliminar copias no autorizadas.
+
+17. ACEPTACION
+Al instalar, ejecutar o utilizar XTRAVON ONE, EL CLIENTE y EL USUARIO declaran haber leido, entendido y aceptado este contrato, asi como las politicas comerciales, tecnicas y de soporte asociadas.
+
+QORA SYSTEMS - Alianza con MSL Marine Surveyors and Logistics Group
+XTRAVON ONE | GRAIN CONTROL

@@ -112,6 +112,9 @@ class ERPElSurcoApp(tk.Tk):
         self._prebuild_queue = []
         self._prebuilding_screen = False
         self._suppress_sidebar_highlight = False
+        self.sidebar_expanded_width = 250
+        self.sidebar_collapsed_width = 64
+        self.sidebar_collapsed = False
         self.portia_panel_visible = False
         self.portia_contexto = {
             "operacion_id": None,
@@ -146,6 +149,7 @@ class ERPElSurcoApp(tk.Tk):
         self.style = ttk.Style()
         self.style.theme_use("clam")
         self.configure_styles()
+        self.instalar_treeview_excel_global()
 
         self.sidebar_buttons = {}
         self.build_layout()
@@ -244,8 +248,322 @@ class ERPElSurcoApp(tk.Tk):
             font=("Segoe UI", 10),
         )
 
+    def instalar_treeview_excel_global(self):
+        if getattr(ttk, "_xtravon_excel_treeview_installed", False):
+            ttk._xtravon_excel_treeview_app = self
+            return
+
+        ttk._xtravon_original_treeview = ttk.Treeview
+        ttk._xtravon_excel_treeview_app = self
+
+        def treeview_factory(*args, **kwargs):
+            tree = ttk._xtravon_original_treeview(*args, **kwargs)
+            app = getattr(ttk, "_xtravon_excel_treeview_app", None)
+            if app is not None:
+                tree.after_idle(lambda tree_ref=tree, app_ref=app: app_ref.habilitar_tabla_excel(tree_ref))
+            return tree
+
+        ttk.Treeview = treeview_factory
+        ttk._xtravon_excel_treeview_installed = True
+
+    def habilitar_tabla_excel(self, tree):
+        try:
+            if not tree.winfo_exists() or getattr(tree, "_xtravon_excel_enabled", False):
+                return
+            columns = list(tree["columns"] or [])
+        except Exception:
+            return
+
+        if not columns:
+            return
+
+        tree._xtravon_excel_enabled = True
+        tree._xtravon_excel_columns = columns
+        tree._xtravon_excel_filters = {}
+        tree._xtravon_excel_sort = None
+        tree._xtravon_excel_refreshing = False
+        tree._xtravon_excel_heading_text = {}
+        tree._xtravon_excel_original_insert = tree.insert
+        tree._xtravon_excel_original_delete = tree.delete
+
+        self._snapshot_tabla_excel(tree)
+
+        def insert_excel(parent, index, iid=None, **kwargs):
+            item_id = tree._xtravon_excel_original_insert(parent, index, iid=iid, **kwargs)
+            if not getattr(tree, "_xtravon_excel_refreshing", False):
+                self._snapshot_tabla_excel(tree)
+            return item_id
+
+        def delete_excel(*items):
+            result = tree._xtravon_excel_original_delete(*items)
+            if not getattr(tree, "_xtravon_excel_refreshing", False):
+                self._snapshot_tabla_excel(tree)
+            return result
+
+        tree.insert = insert_excel
+        tree.delete = delete_excel
+
+        for col in columns:
+            try:
+                base_text = tree.heading(col, "text") or str(col).replace("_", " ").title()
+                tree._xtravon_excel_heading_text[col] = base_text
+                tree.heading(
+                    col,
+                    text=base_text,
+                    command=lambda col_ref=col, tree_ref=tree: self.abrir_filtro_tabla_excel(tree_ref, col_ref),
+                )
+            except Exception:
+                continue
+
+    def _snapshot_tabla_excel(self, tree):
+        rows = []
+        try:
+            for item_id in tree.get_children(""):
+                rows.append(
+                    {
+                        "text": tree.item(item_id, "text"),
+                        "values": tuple(tree.item(item_id, "values") or ()),
+                        "tags": tuple(tree.item(item_id, "tags") or ()),
+                    }
+                )
+            tree._xtravon_excel_all_rows = rows
+        except Exception:
+            tree._xtravon_excel_all_rows = []
+
+    def abrir_filtro_tabla_excel(self, tree, col):
+        try:
+            columns = list(getattr(tree, "_xtravon_excel_columns", []) or list(tree["columns"] or []))
+            col_idx = columns.index(col)
+        except Exception:
+            return
+
+        popup_actual = getattr(self, "_tabla_excel_popup", None)
+        if popup_actual is not None:
+            try:
+                if popup_actual.winfo_exists():
+                    popup_actual.destroy()
+            except Exception:
+                pass
+
+        base_text = getattr(tree, "_xtravon_excel_heading_text", {}).get(col, str(col).replace("_", " ").title())
+        rows = list(getattr(tree, "_xtravon_excel_all_rows", []) or [])
+        values = []
+        seen = set()
+        for row in rows:
+            row_values = row.get("values", ())
+            raw = row_values[col_idx] if col_idx < len(row_values) else ""
+            text = str(raw).strip()
+            display = text if text else "(En blanco)"
+            key = display.lower()
+            if key not in seen:
+                seen.add(key)
+                values.append((display, text))
+        values.sort(key=lambda item: self._clave_orden_tabla_excel(item[1]))
+
+        popup = tk.Toplevel(self)
+        self._tabla_excel_popup = popup
+        popup.title(f"Filtrar {base_text}")
+        popup.configure(bg=self.colors["bg_card"])
+        popup.transient(self)
+        popup.resizable(False, False)
+        popup.geometry("+%d+%d" % (self.winfo_pointerx(), self.winfo_pointery()))
+        popup.bind("<Escape>", lambda _event: popup.destroy())
+
+        tk.Label(
+            popup,
+            text=base_text,
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_dark"],
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w", padx=10, pady=(10, 4))
+
+        sort_frame = tk.Frame(popup, bg=self.colors["bg_card"])
+        sort_frame.pack(fill="x", padx=10, pady=(0, 6))
+        ttk.Button(sort_frame, text="A-Z", style="Gray.TButton", command=lambda: self._ordenar_tabla_excel(tree, col, False, popup)).pack(side="left", padx=(0, 4))
+        ttk.Button(sort_frame, text="Z-A", style="Gray.TButton", command=lambda: self._ordenar_tabla_excel(tree, col, True, popup)).pack(side="left", padx=(0, 4))
+        ttk.Button(sort_frame, text="Menor-Mayor", style="Gray.TButton", command=lambda: self._ordenar_tabla_excel(tree, col, False, popup)).pack(side="left", padx=(0, 4))
+        ttk.Button(sort_frame, text="Mayor-Menor", style="Gray.TButton", command=lambda: self._ordenar_tabla_excel(tree, col, True, popup)).pack(side="left")
+
+        search_var = tk.StringVar()
+        entry = ttk.Entry(popup, textvariable=search_var, width=36)
+        entry.pack(fill="x", padx=10, pady=(0, 6))
+
+        list_frame = tk.Frame(popup, bg=self.colors["bg_card"])
+        list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        listbox = tk.Listbox(
+            list_frame,
+            height=10,
+            selectmode="extended",
+            bg=self.colors["bg_topbar"],
+            fg=self.colors["text_dark"],
+            selectbackground=self.colors["accent"],
+            selectforeground=self.colors["bg_main"],
+            activestyle="none",
+            exportselection=False,
+        )
+        scroll = ttk.Scrollbar(list_frame, orient="vertical", command=listbox.yview)
+        listbox.configure(yscrollcommand=scroll.set)
+        listbox.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+
+        display_to_value = {}
+
+        def poblar():
+            filtro = search_var.get().strip().lower()
+            activos = set((getattr(tree, "_xtravon_excel_filters", {}) or {}).get(col, set()))
+            listbox.delete(0, "end")
+            display_to_value.clear()
+            for display, raw in values:
+                if filtro and filtro not in display.lower():
+                    continue
+                display_to_value[display] = raw
+                listbox.insert("end", display)
+                if raw in activos:
+                    listbox.selection_set(listbox.size() - 1)
+
+        def aplicar():
+            seleccion = listbox.curselection()
+            if seleccion:
+                seleccionados = {display_to_value.get(listbox.get(idx), "") for idx in seleccion}
+                tree._xtravon_excel_filters[col] = seleccionados
+            else:
+                tree._xtravon_excel_filters.pop(col, None)
+            self._aplicar_tabla_excel(tree)
+            popup.destroy()
+
+        def limpiar_columna():
+            tree._xtravon_excel_filters.pop(col, None)
+            self._aplicar_tabla_excel(tree)
+            popup.destroy()
+
+        def limpiar_todo():
+            tree._xtravon_excel_filters.clear()
+            tree._xtravon_excel_sort = None
+            self._aplicar_tabla_excel(tree)
+            popup.destroy()
+
+        actions = tk.Frame(popup, bg=self.colors["bg_card"])
+        actions.pack(fill="x", padx=10, pady=(0, 10))
+        ttk.Button(actions, text="Aplicar", style="Olive.TButton", command=aplicar).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Limpiar columna", style="Gray.TButton", command=limpiar_columna).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Limpiar todo", style="Gray.TButton", command=limpiar_todo).pack(side="left")
+
+        def limpiar_referencia_popup(_event=None):
+            if getattr(self, "_tabla_excel_popup", None) is popup:
+                self._tabla_excel_popup = None
+
+        entry.bind("<KeyRelease>", lambda _event: poblar())
+        listbox.bind("<Double-Button-1>", lambda _event: aplicar())
+        popup.bind("<Destroy>", limpiar_referencia_popup, add="+")
+        poblar()
+        entry.focus_set()
+
+    def _ordenar_tabla_excel(self, tree, col, reverse, popup=None):
+        tree._xtravon_excel_sort = (col, reverse)
+        self._aplicar_tabla_excel(tree)
+        if popup is not None:
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+
+    def _aplicar_tabla_excel(self, tree):
+        try:
+            columns = list(getattr(tree, "_xtravon_excel_columns", []) or list(tree["columns"] or []))
+        except Exception:
+            return
+
+        filters = getattr(tree, "_xtravon_excel_filters", {}) or {}
+        rows = list(getattr(tree, "_xtravon_excel_all_rows", []) or [])
+
+        def matches(row):
+            values = row.get("values", ())
+            for col, allowed in filters.items():
+                if not allowed:
+                    continue
+                try:
+                    idx = columns.index(col)
+                except ValueError:
+                    continue
+                raw = str(values[idx]).strip() if idx < len(values) else ""
+                if raw not in allowed:
+                    return False
+            return True
+
+        visible_rows = [row for row in rows if matches(row)]
+        sort_data = getattr(tree, "_xtravon_excel_sort", None)
+        if sort_data:
+            sort_col, reverse = sort_data
+            try:
+                sort_idx = columns.index(sort_col)
+                visible_rows.sort(
+                    key=lambda row: self._clave_orden_tabla_excel(
+                        row.get("values", ())[sort_idx] if sort_idx < len(row.get("values", ())) else ""
+                    ),
+                    reverse=reverse,
+                )
+            except Exception:
+                pass
+
+        tree._xtravon_excel_refreshing = True
+        try:
+            for item_id in tree.get_children(""):
+                tree._xtravon_excel_original_delete(item_id)
+            for row in visible_rows:
+                tree._xtravon_excel_original_insert(
+                    "",
+                    "end",
+                    text=row.get("text", ""),
+                    values=row.get("values", ()),
+                    tags=row.get("tags", ()),
+                )
+        finally:
+            tree._xtravon_excel_refreshing = False
+
+        self._actualizar_encabezados_tabla_excel(tree)
+
+    def _actualizar_encabezados_tabla_excel(self, tree):
+        columns = list(getattr(tree, "_xtravon_excel_columns", []) or [])
+        filters = getattr(tree, "_xtravon_excel_filters", {}) or {}
+        sort_data = getattr(tree, "_xtravon_excel_sort", None)
+        headings = getattr(tree, "_xtravon_excel_heading_text", {}) or {}
+        for col in columns:
+            base = headings.get(col, str(col).replace("_", " ").title())
+            marker = ""
+            if col in filters:
+                marker = "*"
+            if sort_data and sort_data[0] == col:
+                marker = "Z-A" if sort_data[1] else "A-Z"
+            try:
+                tree.heading(
+                    col,
+                    text=f"{base} {marker}".strip(),
+                    command=lambda col_ref=col, tree_ref=tree: self.abrir_filtro_tabla_excel(tree_ref, col_ref),
+                )
+            except Exception:
+                pass
+
+    def _clave_orden_tabla_excel(self, value):
+        text = str(value if value is not None else "").strip()
+        if not text:
+            return (0, "")
+
+        normalized = text.replace(",", "").replace("%", "").replace("MT", "").strip()
+        try:
+            return (1, float(normalized))
+        except Exception:
+            pass
+
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d", "%d-%m-%Y"):
+            try:
+                return (2, datetime.strptime(text[:10], fmt).toordinal())
+            except Exception:
+                continue
+
+        return (3, text.lower())
+
     def build_layout(self):
-        self.sidebar = tk.Frame(self, bg=self.colors["bg_sidebar"], width=250)
+        self.sidebar = tk.Frame(self, bg=self.colors["bg_sidebar"], width=self.sidebar_expanded_width)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
@@ -265,8 +583,8 @@ class ERPElSurcoApp(tk.Tk):
         self.build_topbar()
 
     def build_sidebar(self):
-        title_frame = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
-        title_frame.pack(fill="x", padx=20, pady=(20, 10))
+        self.sidebar_title_frame = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
+        self.sidebar_title_frame.pack(fill="x", padx=20, pady=(20, 10))
 
         try:
             logo_image = tk.PhotoImage(file=APP_ICON_PATH)
@@ -275,7 +593,7 @@ class ERPElSurcoApp(tk.Tk):
                 logo_image = logo_image.subsample(scale, scale)
             self.sidebar_logo_image = logo_image
             tk.Label(
-                title_frame,
+                self.sidebar_title_frame,
                 image=self.sidebar_logo_image,
                 bg=self.colors["bg_sidebar"],
                 bd=0,
@@ -285,21 +603,22 @@ class ERPElSurcoApp(tk.Tk):
             self.sidebar_logo_image = None
 
         tk.Label(
-            title_frame,
+            self.sidebar_title_frame,
             text="XTRAVON ONE",
             font=("Segoe UI", 14, "bold"),
             bg=self.colors["bg_sidebar"],
             fg=self.colors["text_dark"],
         ).pack(anchor="w")
         tk.Label(
-            title_frame,
+            self.sidebar_title_frame,
             text="GRAIN CONTROL",
             font=("Segoe UI", 10),
             bg=self.colors["bg_sidebar"],
             fg=self.colors["accent"],
         ).pack(anchor="w", pady=(2, 0))
 
-        tk.Frame(self.sidebar, bg=self.colors["border"], height=1).pack(fill="x", padx=20, pady=15)
+        self.sidebar_separator = tk.Frame(self.sidebar, bg=self.colors["border"], height=1)
+        self.sidebar_separator.pack(fill="x", padx=20, pady=15)
 
         self.screen_commands = {
             "Centro Ejecutivo": self.show_centro_ejecutivo,
@@ -340,28 +659,28 @@ class ERPElSurcoApp(tk.Tk):
             ("04", "INTELIGENCIA", ["P.O.R.T.I.A", "Roles y Permisos", "Ayuda / Q&A"]),
         ]
 
-        bottom_frame = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
-        bottom_frame.pack(side="bottom", fill="x", padx=20, pady=20)
+        self.sidebar_bottom_frame = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
+        self.sidebar_bottom_frame.pack(side="bottom", fill="x", padx=20, pady=20)
         tk.Label(
-            bottom_frame,
+            self.sidebar_bottom_frame,
             text="QORA SYSTEMS",
             font=("Segoe UI", 10, "bold"),
             bg=self.colors["bg_sidebar"],
             fg=self.colors["accent"],
         ).pack(anchor="w")
         tk.Label(
-            bottom_frame,
+            self.sidebar_bottom_frame,
             text=f"XTRAVON ONE v{APP_VERSION}",
             font=("Segoe UI", 8),
             bg=self.colors["bg_sidebar"],
             fg=self.colors["text_light"],
         ).pack(anchor="w", pady=(4, 0))
 
-        menu_container = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
-        menu_container.pack(side="top", fill="both", expand=True, padx=(0, 6), pady=(0, 6))
+        self.sidebar_menu_container = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
+        self.sidebar_menu_container.pack(side="top", fill="both", expand=True, padx=(0, 6), pady=(0, 6))
 
-        menu_canvas = tk.Canvas(menu_container, bg=self.colors["bg_sidebar"], highlightthickness=0, bd=0)
-        menu_scroll = ttk.Scrollbar(menu_container, orient="vertical", command=menu_canvas.yview)
+        menu_canvas = tk.Canvas(self.sidebar_menu_container, bg=self.colors["bg_sidebar"], highlightthickness=0, bd=0)
+        menu_scroll = ttk.Scrollbar(self.sidebar_menu_container, orient="vertical", command=menu_canvas.yview)
         menu_frame = tk.Frame(menu_canvas, bg=self.colors["bg_sidebar"])
         menu_window = menu_canvas.create_window((0, 0), window=menu_frame, anchor="nw")
 
@@ -483,16 +802,32 @@ class ERPElSurcoApp(tk.Tk):
 
     def build_topbar(self):
         left = tk.Frame(self.topbar, bg=self.colors["bg_topbar"])
-        left.pack(side="left", fill="y", padx=20)
-        tk.Label(
+        left.pack(side="left", fill="y", padx=14)
+        self.sidebar_toggle_btn = tk.Button(
             left,
+            text="Menu",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.colors["bg_elevated"],
+            fg=self.colors["accent"],
+            activebackground=self.colors["button_hover"],
+            activeforeground=self.colors["bg_main"],
+            relief="flat",
+            bd=0,
+            width=6,
+            command=self.toggle_sidebar,
+        )
+        self.sidebar_toggle_btn.pack(side="left", padx=(0, 12), pady=16)
+        title_block = tk.Frame(left, bg=self.colors["bg_topbar"])
+        title_block.pack(side="left", fill="y")
+        tk.Label(
+            title_block,
             text="XTRAVON ONE | GRAIN CONTROL",
             font=("Segoe UI", 16, "bold"),
             bg=self.colors["bg_topbar"],
             fg=self.colors["text_dark"],
         ).pack(anchor="w", pady=(12, 0))
         tk.Label(
-            left,
+            title_block,
             text=f"QORA SYSTEMS - Alianza con MSL Marine Surveyors and Logistics Group | v{APP_VERSION}",
             font=("Segoe UI", 10),
             bg=self.colors["bg_topbar"],
@@ -501,6 +836,70 @@ class ERPElSurcoApp(tk.Tk):
 
         right = tk.Frame(self.topbar, bg=self.colors["bg_topbar"])
         right.pack(side="right", fill="y", padx=20)
+
+    def toggle_sidebar(self):
+        self.sidebar_collapsed = not getattr(self, "sidebar_collapsed", False)
+        self.aplicar_estado_sidebar()
+
+    def aplicar_estado_sidebar(self):
+        collapsed = getattr(self, "sidebar_collapsed", False)
+        self.sidebar.configure(width=self.sidebar_collapsed_width if collapsed else self.sidebar_expanded_width)
+        try:
+            self.sidebar_toggle_btn.configure(text="Menu")
+        except Exception:
+            pass
+
+        if collapsed:
+            for widget_name in (
+                "sidebar_title_frame",
+                "sidebar_separator",
+                "sidebar_menu_container",
+                "sidebar_bottom_frame",
+            ):
+                widget = getattr(self, widget_name, None)
+                if widget is not None:
+                    widget.pack_forget()
+            panel = getattr(self, "sidebar_collapsed_panel", None)
+            if panel is None:
+                panel = tk.Frame(self.sidebar, bg=self.colors["bg_sidebar"])
+                self.sidebar_collapsed_panel = panel
+                tk.Button(
+                    panel,
+                    text="Menu",
+                    font=("Segoe UI", 9, "bold"),
+                    bg=self.colors["bg_elevated"],
+                    fg=self.colors["accent"],
+                    activebackground=self.colors["button_hover"],
+                    activeforeground=self.colors["bg_main"],
+                    relief="flat",
+                    bd=0,
+                    width=6,
+                    command=self.toggle_sidebar,
+                ).pack(pady=(18, 14))
+                tk.Label(
+                    panel,
+                    text="X",
+                    font=("Segoe UI", 16, "bold"),
+                    bg=self.colors["bg_sidebar"],
+                    fg=self.colors["accent"],
+                ).pack()
+                tk.Label(
+                    panel,
+                    text="ONE",
+                    font=("Segoe UI", 8, "bold"),
+                    bg=self.colors["bg_sidebar"],
+                    fg=self.colors["text_dark"],
+                ).pack(pady=(2, 0))
+            panel.pack(fill="both", expand=True)
+            return
+
+        panel = getattr(self, "sidebar_collapsed_panel", None)
+        if panel is not None:
+            panel.pack_forget()
+        self.sidebar_title_frame.pack(fill="x", padx=20, pady=(20, 10))
+        self.sidebar_separator.pack(fill="x", padx=20, pady=15)
+        self.sidebar_bottom_frame.pack(side="bottom", fill="x", padx=20, pady=20)
+        self.sidebar_menu_container.pack(side="top", fill="both", expand=True, padx=(0, 6), pady=(0, 6))
 
     def build_portia_floating_panel(self):
         self.portia_float_button = tk.Button(
@@ -7058,7 +7457,6 @@ class ERPElSurcoApp(tk.Tk):
         for col, (label, var, width, kind) in enumerate([
             ("Chofer", self.despacho_chofer_var, 34, "combo"),
             ("Placa", self.despacho_placa_var, 16, "combo"),
-            ("Destino WhatsApp/correo", self.despacho_destino_var, 28, "entry"),
         ]):
             tk.Label(form, text=label, bg=self.colors["bg_card"], fg=self.colors["text_dark"], font=("Segoe UI", 9, "bold")).grid(row=0, column=col, sticky="w", padx=4)
             if kind == "combo":
@@ -7076,19 +7474,6 @@ class ERPElSurcoApp(tk.Tk):
             else:
                 ttk.Entry(form, textvariable=var, width=width).grid(row=1, column=col, sticky="ew", padx=4)
             form.grid_columnconfigure(col, weight=1)
-
-        actions = tk.Frame(controls, bg=self.colors["bg_card"])
-        actions.pack(fill="x", padx=14, pady=(0, 12))
-        ttk.Combobox(actions, textvariable=self.despacho_canal_var, values=["WHATSAPP", "CORREO"], state="readonly", width=12).pack(side="left", padx=(0, 8), ipady=8)
-        ttk.Button(actions, text="Asignar guia", style="Olive.TButton", command=self.asignar_siguiente_viaje).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Enviar QR seleccion", style="Olive.TButton", command=self.entregar_qr_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Liberar seleccion", style="Gray.TButton", command=self.liberar_guias_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Cancelar seleccion", style="Gray.TButton", command=self.cancelar_guias_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Bloquear chofer/placa", style="Gray.TButton", command=self.bloquear_chofer_placa_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Marcar pendientes", style="Gray.TButton", command=self.marcar_todos_pendientes_reasignacion_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Reasignar marcadas", style="Olive.TButton", command=self.reasignar_pendientes_marcadas_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Desmarcar", style="Gray.TButton", command=self.desmarcar_todos_pendientes_reasignacion_despacho).pack(side="left", padx=(0, 8))
-        ttk.Button(actions, text="Limpiar filtros", style="Gray.TButton", command=self.limpiar_filtros_despacho).pack(side="left", padx=(0, 8))
 
         self.despacho_body = tk.Frame(body, bg=self.colors["bg_main"])
         self.despacho_body.pack(fill="both", expand=True)
@@ -7170,7 +7555,7 @@ class ERPElSurcoApp(tk.Tk):
         entry = ttk.Entry(selector, textvariable=var, width=width)
         button = tk.Button(
             selector,
-            text="v",
+            text="...",
             width=2,
             bg=self.colors["bg_card"],
             fg=self.colors["text_dark"],
@@ -7814,7 +8199,7 @@ class ERPElSurcoApp(tk.Tk):
             activo = bool(filtros.get(col) is not None and filtros[col].get().strip())
             tree.heading(
                 col,
-                text=f"{base} {'*' if activo else 'v'}",
+                text=f"{base} {'*' if activo else ''}".strip(),
                 command=lambda c=col, tree_ref=tree: self.abrir_filtro_columna_despacho(tree_ref, c),
             )
         for item in tree.get_children():
