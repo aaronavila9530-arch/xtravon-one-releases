@@ -632,6 +632,7 @@ def render_informe_detalle(self, data):
         corte_rows = [
             {
                 "empresa": row.get("empresa"),
+                "producto": self.producto_visible_informe(row.get("producto")),
                 "cuota_pct": row.get("cuota_pct"),
                 "cuota_tm": row.get("cuota_tm"),
                 "cuota_viajes": row.get("cuota_viajes"),
@@ -655,9 +656,10 @@ def render_informe_detalle(self, data):
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "CORTE FINAL - CUOTA VS DESCARGADO",
-            ("empresa", "cuota_pct", "cuota_tm", "cuota_viajes", "retirado_tm", "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm", "pendiente_viajes"),
+            ("empresa", "producto", "cuota_pct", "cuota_tm", "cuota_viajes", "retirado_tm", "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm", "pendiente_viajes"),
             {
                 "empresa": "EMPRESA",
+                "producto": "PRODUCTO",
                 "cuota_pct": "CUOTA %",
                 "cuota_tm": "CUOTA T.M.",
                 "cuota_viajes": "CUOTA # VIAJES",
