@@ -911,10 +911,18 @@ def render_informe_detalle(self, data):
         )
 
     if tipo_reporte == "marchamos":
+        marchamos = [
+            {
+                **row,
+                "peso_neto": row.get("retirado_kg", row.get("peso_neto")),
+            }
+            for row in data.get("marchamos", [])
+            if isinstance(row, dict)
+        ]
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Marchamos por viaje",
-            ("guia", "empresa", "producto", "chofer", "placa", "bodega_numero", "numero_tolva", "marchamos", "peso_vacio", "peso_lleno", "retirado_mt", "fecha"),
+            ("guia", "empresa", "producto", "chofer", "placa", "bodega_numero", "numero_tolva", "marchamos", "peso_vacio", "peso_lleno", "peso_neto", "fecha"),
             {
                 "guia": "Guia",
                 "empresa": "Empresa",
@@ -924,12 +932,12 @@ def render_informe_detalle(self, data):
                 "bodega_numero": "Bodega",
                 "numero_tolva": "Tolva",
                 "marchamos": "Marchamos",
-                "peso_vacio": "Peso vacio",
-                "peso_lleno": "Peso lleno",
-                "retirado_mt": "MT",
+                "peso_vacio": "Tara KG",
+                "peso_lleno": "Bruto KG",
+                "peso_neto": "Neto KG",
                 "fecha": "Fecha",
             },
-            data.get("marchamos", []),
+            marchamos,
             height=14,
         )
 
@@ -960,7 +968,11 @@ def crear_tabla_informe(self, parent, titulo, columns, headings, data, height=10
         for col in columns:
             value = row.get(col, "")
             if isinstance(value, float):
-                decimals = 3 if "SALDOS POR EMPRESA" in str(titulo or "").upper() and col == "saldo_mt" else 2
+                heading = str(headings.get(col, col)).upper()
+                if heading.endswith(" KG"):
+                    decimals = 0
+                else:
+                    decimals = 3 if "SALDOS POR EMPRESA" in str(titulo or "").upper() and col == "saldo_mt" else 2
                 value = f"{value:,.{decimals}f}"
             values.append(value)
         tree.insert("", "end", values=values)

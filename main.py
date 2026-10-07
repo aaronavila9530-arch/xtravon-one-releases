@@ -2115,6 +2115,11 @@ class ERPElSurcoApp(tk.Tk):
         number = self.safe_number(value)
         return f"{number:,.{decimals}f}"
 
+    def formatear_peso_kg(self, value):
+        if value in (None, ""):
+            return ""
+        return f"{self.safe_number(value):,.0f}"
+
     def formatear_fecha(self, valor):
         if not valor:
             return ""
@@ -3433,7 +3438,7 @@ class ERPElSurcoApp(tk.Tk):
             fg=self.colors["text_dark"],
         ).pack(anchor="w", padx=15, pady=15)
 
-        columns = ("id", "guia", "numero_embarque", "bodega_numero", "empresa", "buque", "fecha", "producto", "chofer", "placa", "estado", "lecturas", "etapa_qr", "numero_tolva", "qr_bloqueado")
+        columns = ("id", "guia", "numero_embarque", "bodega_numero", "empresa", "buque", "fecha", "producto", "chofer", "placa", "tara_kg", "bruto_kg", "neto_kg", "estado", "lecturas", "etapa_qr", "numero_tolva", "qr_bloqueado")
         table_frame = tk.Frame(main_panel, bg=self.colors["bg_card"])
         table_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=22, selectmode="extended")
@@ -3449,6 +3454,9 @@ class ERPElSurcoApp(tk.Tk):
             "producto": "Producto",
             "chofer": "Chofer",
             "placa": "Placa",
+            "tara_kg": "Tara KG",
+            "bruto_kg": "Bruto KG",
+            "neto_kg": "Neto KG",
             "estado": "Estado",
             "lecturas": "Lecturas",
             "etapa_qr": "Etapa QR",
@@ -3466,6 +3474,9 @@ class ERPElSurcoApp(tk.Tk):
             "producto": 120,
             "chofer": 140,
             "placa": 90,
+            "tara_kg": 105,
+            "bruto_kg": 105,
+            "neto_kg": 105,
             "estado": 120,
             "lecturas": 70,
             "etapa_qr": 130,
@@ -3975,6 +3986,9 @@ class ERPElSurcoApp(tk.Tk):
                     fila.get("producto", ""),
                     fila.get("chofer", ""),
                     fila.get("placa", ""),
+                    self.formatear_peso_kg(fila.get("peso_vacio")),
+                    self.formatear_peso_kg(fila.get("peso_lleno")),
+                    self.formatear_peso_kg(fila.get("peso_neto")),
                     fila.get("estado", "PENDIENTE"),
                     fila.get("lecturas", 0),
                     fila.get("etapa_qr", "") or self.estado_visual_qr(fila),
@@ -4469,8 +4483,9 @@ class ERPElSurcoApp(tk.Tk):
             ("Lecturas / Escaneos", fila.get("lecturas")),
             ("Aprobada", fila.get("aprobada")),
             ("Ficha", fila.get("ficha")),
-            ("Peso vacio", fila.get("peso_vacio")),
-            ("Peso lleno", fila.get("peso_lleno")),
+            ("Tara KG", self.formatear_peso_kg(fila.get("peso_vacio"))),
+            ("Bruto KG", self.formatear_peso_kg(fila.get("peso_lleno"))),
+            ("Neto KG", self.formatear_peso_kg(fila.get("peso_neto"))),
             ("Marchamos", fila.get("marchamos")),
             ("Etapa QR", fila.get("etapa_qr")),
             ("QR bloqueado", fila.get("qr_bloqueado")),
@@ -4553,6 +4568,7 @@ class ERPElSurcoApp(tk.Tk):
             "ficha",
             "peso_vacio",
             "peso_lleno",
+            "peso_neto",
             "marchamos",
             "etapa_qr",
             "lectura_tercer_escaneo",
