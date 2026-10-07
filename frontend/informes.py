@@ -960,7 +960,8 @@ def crear_tabla_informe(self, parent, titulo, columns, headings, data, height=10
         for col in columns:
             value = row.get(col, "")
             if isinstance(value, float):
-                value = f"{value:,.2f}"
+                decimals = 3 if "SALDOS POR EMPRESA" in str(titulo or "").upper() and col == "saldo_mt" else 2
+                value = f"{value:,.{decimals}f}"
             values.append(value)
         tree.insert("", "end", values=values)
 
