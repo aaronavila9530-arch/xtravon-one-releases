@@ -10021,32 +10021,33 @@ class ERPElSurcoApp(tk.Tk):
 
         cards = tk.Frame(body, bg=self.colors["bg_main"])
         cards.pack(fill="x", pady=(0, 12))
+        descargado_kg = self.safe_number(kpis.get("retirado_mt")) * 1000 if kpis.get("retirado_mt") not in (None, "") else self.safe_number(kpis.get("retirado_kg"))
         self.create_card(cards, "Guias", self.formatear_numero(kpis.get("total_guias")), self.colors["accent"])
         self.create_card(cards, "Completas", self.formatear_numero(kpis.get("completas")), self.colors["success"])
-        self.create_card(cards, "Descargado MT", self.formatear_numero(kpis.get("retirado_mt", self.safe_number(kpis.get("retirado_kg"), 0)), 2), self.colors["info"])
+        self.create_card(cards, "Descargado KG", self.formatear_numero(descargado_kg, 0), self.colors["info"])
         self.create_card(cards, "Alertas", self.formatear_numero(kpis.get("alertas")), self.colors["warning"])
 
         corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
         corte_totales = corte_cliente.get("totales", {}) if isinstance(corte_cliente.get("totales"), dict) else {}
         cards_cliente = tk.Frame(body, bg=self.colors["bg_main"])
         cards_cliente.pack(fill="x", pady=(0, 12))
-        self.create_card(cards_cliente, "Cuota total MT", self.formatear_numero(corte_totales.get("cuota_tm"), 2), self.colors["accent_light"])
-        self.create_card(cards_cliente, "Pendiente MT", self.formatear_numero(corte_totales.get("pendiente_tm"), 2), self.colors["warning"])
+        self.create_card(cards_cliente, "Cuota total KG", self.formatear_numero(self.safe_number(corte_totales.get("cuota_tm")) * 1000, 0), self.colors["accent_light"])
+        self.create_card(cards_cliente, "Pendiente KG", self.formatear_numero(self.safe_number(corte_totales.get("pendiente_tm")) * 1000, 0), self.colors["warning"])
         self.create_card(cards_cliente, "Avance cuota", f"{self.safe_number(corte_totales.get('avance_pct')):,.2f}%", self.colors["success"])
-        self.create_card(cards_cliente, "Promedio MT/viaje", self.formatear_numero(kpis.get("promedio_mt_camion"), 2), self.colors["info"])
+        self.create_card(cards_cliente, "Promedio KG/viaje", self.formatear_numero(self.safe_number(kpis.get("promedio_mt_camion")) * 1000, 0), self.colors["info"])
 
         corte_rows = []
         for row in corte_cliente.get("rows", []) or []:
             corte_rows.append({
                 "empresa": row.get("empresa"),
                 "cuota_pct": row.get("cuota_pct"),
-                "cuota_tm": row.get("cuota_tm"),
+                "cuota_tm": self.safe_number(row.get("cuota_tm")) * 1000,
                 "cuota_viajes": row.get("cuota_viajes"),
-                "retirado_tm": row.get("retirado_tm"),
+                "retirado_tm": self.safe_number(row.get("retirado_tm")) * 1000,
                 "retirado_pct": row.get("retirado_pct"),
                 "retirado_viajes": row.get("retirado_viajes"),
-                "promedio_x_viaje": row.get("promedio_x_viaje"),
-                "pendiente_tm": row.get("pendiente_tm"),
+                "promedio_x_viaje": self.safe_number(row.get("promedio_x_viaje")) * 1000,
+                "pendiente_tm": self.safe_number(row.get("pendiente_tm")) * 1000,
                 "pendiente_viajes": row.get("pendiente_viajes"),
             })
 
@@ -10071,13 +10072,13 @@ class ERPElSurcoApp(tk.Tk):
             {
                 "empresa": "EMPRESA",
                 "cuota_pct": "CUOTA %",
-                "cuota_tm": "CUOTA T.M.",
+                "cuota_tm": "CUOTA KG",
                 "cuota_viajes": "CUOTA # VIAJES",
-                "retirado_tm": "RETIRADO T.M.",
+                "retirado_tm": "RETIRADO KG",
                 "retirado_pct": "RETIRADO %",
                 "retirado_viajes": "RETIRADO # VIAJES",
-                "promedio_x_viaje": "PROMEDIO X VIAJE",
-                "pendiente_tm": "PENDIENTE T.M.",
+                "promedio_x_viaje": "PROMEDIO X VIAJE KG",
+                "pendiente_tm": "PENDIENTE KG",
                 "pendiente_viajes": "PENDIENTE VIAJES",
             },
             corte_rows if corte_rows else cuotas,
@@ -10155,7 +10156,9 @@ class ERPElSurcoApp(tk.Tk):
             for col in columns:
                 value = row.get(col, "")
                 if isinstance(value, float):
-                    value = f"{value:,.2f}"
+                    heading = str(headings.get(col, col)).upper()
+                    decimals = 0 if heading.endswith(" KG") else 3 if "SALDOS POR EMPRESA" in str(titulo or "").upper() and col == "saldo_mt" else 2
+                    value = f"{value:,.{decimals}f}"
                 values.append(value)
             tree.insert("", "end", values=values)
 

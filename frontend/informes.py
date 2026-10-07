@@ -625,22 +625,22 @@ def render_informe_detalle(self, data):
     if tipo_reporte == "cliente":
         corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
         corte_totales = corte_cliente.get("totales", {}) if isinstance(corte_cliente.get("totales"), dict) else {}
-        self.create_card(cards, "Cuota total MT", self.formatear_numero(corte_totales.get("cuota_tm"), 2), self.colors["accent"])
-        self.create_card(cards, "Descargado MT", self.formatear_numero(corte_totales.get("retirado_tm"), 2), self.colors["success"])
-        self.create_card(cards, "Pendiente MT", self.formatear_numero(corte_totales.get("pendiente_tm"), 2), self.colors["warning"])
+        self.create_card(cards, "Cuota total KG", self.formatear_numero(self.safe_number(corte_totales.get("cuota_tm")) * 1000, 0), self.colors["accent"])
+        self.create_card(cards, "Descargado KG", self.formatear_numero(self.safe_number(corte_totales.get("retirado_tm")) * 1000, 0), self.colors["success"])
+        self.create_card(cards, "Pendiente KG", self.formatear_numero(self.safe_number(corte_totales.get("pendiente_tm")) * 1000, 0), self.colors["warning"])
         self.create_card(cards, "Avance", f"{self.safe_number(corte_totales.get('avance_pct')):,.2f}%", self.colors["info"])
         corte_rows = [
             {
                 "empresa": row.get("empresa"),
                 "producto": self.producto_visible_informe(row.get("producto")),
                 "cuota_pct": row.get("cuota_pct"),
-                "cuota_tm": row.get("cuota_tm"),
+                "cuota_tm": self.safe_number(row.get("cuota_tm")) * 1000,
                 "cuota_viajes": row.get("cuota_viajes"),
-                "retirado_tm": row.get("retirado_tm"),
+                "retirado_tm": self.safe_number(row.get("retirado_tm")) * 1000,
                 "retirado_pct": row.get("retirado_pct"),
                 "retirado_viajes": row.get("retirado_viajes"),
-                "promedio_x_viaje": row.get("promedio_x_viaje"),
-                "pendiente_tm": row.get("pendiente_tm"),
+                "promedio_x_viaje": self.safe_number(row.get("promedio_x_viaje")) * 1000,
+                "pendiente_tm": self.safe_number(row.get("pendiente_tm")) * 1000,
                 "pendiente_viajes": row.get("pendiente_viajes"),
             }
             for row in corte_cliente.get("rows", []) or []
@@ -661,13 +661,13 @@ def render_informe_detalle(self, data):
                 "empresa": "EMPRESA",
                 "producto": "PRODUCTO",
                 "cuota_pct": "CUOTA %",
-                "cuota_tm": "CUOTA T.M.",
+                "cuota_tm": "CUOTA KG",
                 "cuota_viajes": "CUOTA # VIAJES",
-                "retirado_tm": "RETIRADO T.M.",
+                "retirado_tm": "RETIRADO KG",
                 "retirado_pct": "RETIRADO %",
                 "retirado_viajes": "RETIRADO # VIAJES",
-                "promedio_x_viaje": "PROMEDIO X VIAJE",
-                "pendiente_tm": "PENDIENTE T.M.",
+                "promedio_x_viaje": "PROMEDIO X VIAJE KG",
+                "pendiente_tm": "PENDIENTE KG",
                 "pendiente_viajes": "PENDIENTE VIAJES",
             },
             corte_rows,
