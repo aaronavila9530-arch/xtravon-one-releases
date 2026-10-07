@@ -1208,7 +1208,7 @@ def valor_descargado_visible_centro(self, row, mt_key="retirado_mt", kg_key="ret
     mt = self.safe_number(mt_raw, 0)
     kg = self.safe_number(kg_raw, 0)
     if kg_raw not in (None, "") and (mt_raw in (None, "") or abs(kg) > abs(mt) * 10):
-        return kg
+        return kg / 1000
     if mt_raw not in (None, ""):
         return mt
     return kg
