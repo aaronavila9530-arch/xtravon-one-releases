@@ -2210,6 +2210,15 @@ class ERPElSurcoApp(tk.Tk):
             raise RuntimeError(self.obtener_detalle_error(respuesta))
         return respuesta.json()
 
+    def api_get_cuotas_propuesta_buque(self, operacion_id):
+        respuesta = requests.get(
+            f"{self.api_base}/operaciones-buque/{operacion_id}/cuotas/propuesta",
+            timeout=60,
+        )
+        if respuesta.status_code != 200:
+            raise RuntimeError(self.obtener_detalle_error(respuesta))
+        return respuesta.json()
+
     def api_get_despacho_resumen(self, operacion_id=None, filtros=None):
         params = {}
         if not operacion_id:
@@ -5389,7 +5398,8 @@ class ERPElSurcoApp(tk.Tk):
         ttk.Button(cuota_actions, text="Crear cuotas", style="Olive.TButton", command=self.guardar_cuotas_lote_front).pack(side="left", padx=(0, 8))
         ttk.Button(cuota_actions, text="Editar", style="Gray.TButton", command=self.editar_cuota_seleccionada).pack(side="left", padx=(0, 8))
         ttk.Button(cuota_actions, text="-", style="Gray.TButton", command=self.eliminar_cuota_seleccionada).pack(side="left", padx=(0, 8))
-        ttk.Button(cuota_actions, text="Cargar cuotas activas", style="Gray.TButton", command=self.cargar_cuotas_operacion_activa).pack(side="left")
+        ttk.Button(cuota_actions, text="Cargar cuotas activas", style="Gray.TButton", command=self.cargar_cuotas_operacion_activa).pack(side="left", padx=(0, 8))
+        ttk.Button(cuota_actions, text="Proponer ultimo cierre", style="Gray.TButton", command=self.cargar_propuesta_cuotas_ultimo_cierre).pack(side="left")
 
         cuotas_columns = ("id", "cliente", "producto", "bodega", "cuota", "unidad")
         cuotas_table_frame = tk.Frame(cuotas_panel, bg=self.colors["bg_card"])
@@ -5737,6 +5747,61 @@ class ERPElSurcoApp(tk.Tk):
         self.ejecutar_en_segundo_plano(
             "Cuotas operacion",
             "Cargando cuotas de la operacion seleccionada...",
+            tarea,
+            al_terminar,
+        )
+
+    def cargar_propuesta_cuotas_ultimo_cierre(self):
+        operacion_id = self.obtener_operacion_cuota_id()
+        if not operacion_id:
+            messagebox.showwarning("Sin operacion", "Seleccione la operacion nueva para proponer cuotas.")
+            return
+
+        def tarea():
+            detalle = self.api_get_operacion_detalle(operacion_id)
+            propuesta = self.api_get_cuotas_propuesta_buque(operacion_id)
+            return {"detalle": detalle, "propuesta": propuesta}
+
+        def al_terminar(resultado):
+            detalle = resultado.get("detalle", {})
+            propuesta = resultado.get("propuesta", {})
+            self.operacion_activa = detalle.get("operacion") or self.operacion_activa
+            self.actualizar_operacion_activa_label()
+            self.actualizar_productos_cuota_desde_operacion(detalle)
+
+            cuotas = propuesta.get("data", []) if isinstance(propuesta, dict) else []
+            if self.cuotas_tree is not None:
+                for item in self.cuotas_tree.get_children():
+                    self.cuotas_tree.delete(item)
+                for cuota in cuotas:
+                    self.cuotas_tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            "PENDIENTE",
+                            cuota.get("cliente", ""),
+                            self.producto_cuota_visible(cuota.get("producto")),
+                            self.bodega_cuota_visible(cuota.get("bodega_numeros") or cuota.get("bodega_numero")),
+                            self.formatear_numero(cuota.get("cuota"), 3),
+                            cuota.get("unidad", "MT"),
+                        ),
+                    )
+
+            origen = propuesta.get("operacion_origen") or {}
+            if not cuotas:
+                messagebox.showinfo("Propuesta de cuotas", propuesta.get("message") or "No se encontraron cuotas para proponer.")
+                return
+            messagebox.showinfo(
+                "Propuesta de cuotas",
+                "Se cargaron cuotas sugeridas como PENDIENTE.\n"
+                "Puede ajustar cliente, producto, bodega o MT y luego presionar Crear cuotas para confirmar.\n\n"
+                f"Origen: {origen.get('nombre_buque', 'ultimo cierre')} | {self.fecha_larga_es(origen.get('fecha_inicio'))}\n"
+                f"Lineas propuestas: {len(cuotas)}",
+            )
+
+        self.ejecutar_en_segundo_plano(
+            "Propuesta de cuotas",
+            "Buscando cuotas del ultimo buque cerrado...",
             tarea,
             al_terminar,
         )
