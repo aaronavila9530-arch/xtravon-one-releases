@@ -503,6 +503,25 @@ def render_informe_detalle(self, data):
         for row in data.get("graficos", {}).get("retiro_por_producto", [])
         if isinstance(row, dict)
     ]
+    saldos_cliente = [
+        {
+            "empresa": row.get("empresa") or row.get("cliente"),
+            "producto": self.producto_visible_informe(row.get("producto")),
+            "saldo_mt": row.get("saldo_mt"),
+            "origen": row.get("origen", "CANT RETIRO"),
+        }
+        for row in data.get("saldos_cliente", [])
+        if isinstance(row, dict)
+    ]
+    for total in data.get("saldos_totales_producto", []) or []:
+        if isinstance(total, dict):
+            producto_total = self.producto_visible_informe(total.get("producto"))
+            saldos_cliente.append({
+                "empresa": f"TOTAL {producto_total}:",
+                "producto": producto_total,
+                "saldo_mt": total.get("saldo_mt"),
+                "origen": "TOTAL",
+            })
     alertas = data.get("alertas", [])
     sof = data.get("sof", [])
     sof_detalle = data.get("sof_detalle", [])
@@ -650,6 +669,14 @@ def render_informe_detalle(self, data):
                 "pendiente_viajes": "PENDIENTE VIAJES",
             },
             corte_rows,
+        )
+        self.crear_tabla_informe(
+            self.informes_detalle_body,
+            "INFORME DE SALDOS POR EMPRESA",
+            ("empresa", "producto", "saldo_mt"),
+            {"empresa": "EMPRESA", "producto": "PRODUCTO", "saldo_mt": "T.M."},
+            saldos_cliente,
+            height=12,
         )
         bodegas_cliente = data.get("reporte_bodegas_cliente", {}) if isinstance(data.get("reporte_bodegas_cliente"), dict) else {}
         bodega_headers = list(bodegas_cliente.get("headers", []) or [])
@@ -813,6 +840,14 @@ def render_informe_detalle(self, data):
         )
 
     if tipo_reporte in ("ejecutivo", "cuotas", "sof_alertas"):
+        self.crear_tabla_informe(
+            self.informes_detalle_body,
+            "Informe de saldos por empresa",
+            ("empresa", "producto", "saldo_mt"),
+            {"empresa": "Empresa", "producto": "Producto", "saldo_mt": "T.M."},
+            saldos_cliente,
+            height=10,
+        )
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Cuota vs descargado real",
