@@ -7525,6 +7525,8 @@ class ERPElSurcoApp(tk.Tk):
         self.despacho_placa_var = tk.StringVar()
         self.despacho_canal_var = tk.StringVar(value="WHATSAPP")
         self.despacho_destino_var = tk.StringVar()
+        self.despacho_operacion_var = tk.StringVar()
+        self.despacho_operaciones_map = {}
         self.despacho_solicitud_id = None
         self.despacho_filtro_vars = {
             "guia": tk.StringVar(),
@@ -7572,6 +7574,13 @@ class ERPElSurcoApp(tk.Tk):
         top = tk.Frame(controls, bg=self.colors["bg_card"])
         top.pack(fill="x", padx=14, pady=(12, 8))
         ttk.Button(top, text="Buscar operacion activa", style="Olive.TButton", command=self.cargar_despacho_resumen).pack(side="left", padx=(0, 10))
+        self.despacho_operacion_combo = self.crear_selector_filtrable_despacho(
+            top,
+            self.despacho_operacion_var,
+            width=46,
+            on_select=self.cargar_despacho_resumen,
+        )
+        self.despacho_operacion_combo.pack(side="left", fill="x", expand=True, padx=(0, 10))
         self.despacho_estado_label = tk.Label(
             top,
             text="Presione Buscar operacion activa para consultar.",
@@ -7607,6 +7616,7 @@ class ERPElSurcoApp(tk.Tk):
         self.despacho_body = tk.Frame(body, bg=self.colors["bg_main"])
         self.despacho_body.pack(fill="both", expand=True)
         self.render_despacho_placeholder()
+        self.after(100, self.cargar_operaciones_despacho_combo)
         self.after(150, self.cargar_despacho_resumen)
 
     def render_despacho_placeholder(self):
@@ -7797,7 +7807,8 @@ class ERPElSurcoApp(tk.Tk):
             return
         texto = selector._xtravon_var.get().strip().lower()
         opciones = list(getattr(selector, "_xtravon_values", []) or [])
-        filtrados = [valor for valor in opciones if not texto or texto in valor.lower()]
+        texto_es_opcion_exacta = any(texto == valor.lower() for valor in opciones)
+        filtrados = opciones if texto_es_opcion_exacta else [valor for valor in opciones if not texto or texto in valor.lower()]
         popup.listbox.delete(0, "end")
         popup.listbox.insert("end", "(Todos)")
         for valor in filtrados[:80]:
@@ -7862,7 +7873,53 @@ class ERPElSurcoApp(tk.Tk):
         if self.despacho_resumen:
             self.cargar_despacho_resumen()
 
+    def cargar_operaciones_despacho_combo(self):
+        if not hasattr(self, "despacho_operacion_combo"):
+            return
+        try:
+            data = self.api_get_operaciones_buque()
+            operaciones = data.get("data", []) if isinstance(data, dict) else []
+        except Exception:
+            operaciones = []
+        operaciones = [op for op in operaciones if isinstance(op, dict) and op.get("id")]
+        operaciones.sort(
+            key=lambda op: (
+                str(op.get("fecha_inicio") or op.get("fecha") or ""),
+                self.safe_int(op.get("id"), 0),
+            ),
+            reverse=True,
+        )
+        mapa = {}
+        valores = []
+        for op in operaciones:
+            etiqueta = (
+                f"{op.get('id')} | {op.get('nombre_buque', '')} | "
+                f"{self.fecha_larga_es(op.get('fecha_inicio'))} | {op.get('estado', '')}"
+            )
+            mapa[etiqueta] = op
+            valores.append(etiqueta)
+        self.despacho_operaciones_map = mapa
+        self.configurar_combo_filtrable_despacho(
+            self.despacho_operacion_combo,
+            valores,
+            self.despacho_operacion_var,
+        )
+        if not self.despacho_operacion_var.get().strip() and valores:
+            self.despacho_operacion_var.set(valores[0])
+
     def obtener_operacion_despacho_consulta(self):
+        etiqueta = getattr(self, "despacho_operacion_var", tk.StringVar()).get().strip()
+        op = getattr(self, "despacho_operaciones_map", {}).get(etiqueta)
+        if isinstance(op, dict) and op.get("id"):
+            return op
+        if etiqueta:
+            op_id = self.safe_int(etiqueta.split("|", 1)[0].strip(), None)
+            if op_id:
+                try:
+                    detalle = self.api_get_operacion_detalle(op_id)
+                    return detalle.get("operacion") or {"id": op_id}
+                except Exception:
+                    return {"id": op_id}
         try:
             activa = self.api_get_operacion_activa()
             if isinstance(activa, dict) and activa.get("id"):
