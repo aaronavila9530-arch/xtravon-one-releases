@@ -9822,7 +9822,7 @@ class ERPElSurcoApp(tk.Tk):
         ttk.Combobox(
             actions,
             textvariable=self.informes_tipo_reporte_var,
-            values=["Cliente ejecutivo", "Operativo sintetizado"],
+            values=["Cliente ejecutivo", "Operativo sintetizado", "Cierre de barco"],
             state="readonly",
             width=24,
         ).pack(side="left", padx=(0, 8))
@@ -9861,7 +9861,21 @@ class ERPElSurcoApp(tk.Tk):
 
     def tipo_reporte_informes_api(self):
         valor = self.informes_tipo_reporte_var.get().strip().lower() if hasattr(self, "informes_tipo_reporte_var") else ""
+        if "cierre" in valor:
+            return "cierre_barco"
         return "ejecutivo" if "operativo" in valor else "cliente"
+
+    def validar_informe_cierre_barco(self, operacion):
+        if self.tipo_reporte_informes_api() != "cierre_barco":
+            return True
+        estado = str((operacion or {}).get("estado") or "").strip().upper()
+        if estado == "CERRADA":
+            return True
+        messagebox.showwarning(
+            "Cierre de barco no disponible",
+            "El reporte Cierre de barco solo se habilita cuando el buque esta CERRADA.",
+        )
+        return False
 
     def obtener_parametros_informe(self):
         params = {"tipo_reporte": self.tipo_reporte_informes_api()}
@@ -10020,6 +10034,8 @@ class ERPElSurcoApp(tk.Tk):
         operacion = self.obtener_operacion_informe_seleccionada()
         if not operacion:
             return
+        if not self.validar_informe_cierre_barco(operacion):
+            return
 
         operacion_id = operacion.get("id")
         params = self.obtener_parametros_informe()
@@ -10040,6 +10056,8 @@ class ERPElSurcoApp(tk.Tk):
     def descargar_informe_seleccionado(self):
         operacion = self.obtener_operacion_informe_seleccionada()
         if not operacion:
+            return
+        if not self.validar_informe_cierre_barco(operacion):
             return
 
         formato_ui = self.informes_exportar_formato_var.get().strip().lower() if hasattr(self, "informes_exportar_formato_var") else "pdf"
