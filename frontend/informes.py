@@ -23,6 +23,8 @@ def install_informes_screen(app_class):
     app_class.render_informe_detalle = render_informe_detalle
     app_class.crear_tabla_informe = crear_tabla_informe
     app_class.crear_graficos_informe = crear_graficos_informe
+    app_class.render_graficos_informe_panel = render_graficos_informe_panel
+    app_class.actualizar_graficos_corte_filtrado = actualizar_graficos_corte_filtrado
     app_class.producto_visible_informe = producto_visible_informe
 
 
@@ -665,16 +667,15 @@ def render_informe_detalle(self, data):
             }
             for row in corte_cliente.get("rows", []) or []
         ]
-        self.crear_graficos_informe(
-            [
-                ("Descargado por cliente", cuotas, "cliente", "retirado_mt", "barras"),
-                ("Saldo por cliente", corte_rows, "empresa", "pendiente_tm", "barras"),
-                ("Saldo total por producto", saldos_producto, "producto", "saldo_mt", "barras"),
-                ("Pendiente por bodega", graficos.get("faltante_bodegas", []), "bodega", "faltante_mt", "barras"),
-                ("Tendencia diaria MT", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", "lineal"),
-            ]
-        )
-        self.crear_tabla_informe(
+        cliente_chart_specs = [
+            ("Descargado por cliente", corte_rows, "empresa", "retirado_tm", "barras"),
+            ("Saldo por cliente", corte_rows, "empresa", "pendiente_tm", "barras"),
+            ("Saldo total por producto", saldos_producto, "producto", "saldo_mt", "barras"),
+            ("Pendiente por bodega", graficos.get("faltante_bodegas", []), "bodega", "faltante_mt", "barras"),
+            ("Tendencia diaria MT", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", "lineal"),
+        ]
+        charts_panel = self.crear_graficos_informe(cliente_chart_specs)
+        corte_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "CORTE FINAL - CUOTA VS DESCARGADO",
             ("empresa", "producto", "cuota_pct", "cuota_tm", "cuota_viajes", "retirado_tm", "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm", "pendiente_viajes"),
@@ -693,6 +694,8 @@ def render_informe_detalle(self, data):
             },
             corte_rows,
         )
+        if corte_tree is not None and charts_panel is not None:
+            corte_tree._xtravon_excel_on_filter = lambda visible_rows, panel=charts_panel, base_specs=cliente_chart_specs, cols=corte_tree["columns"]: self.actualizar_graficos_corte_filtrado(panel, visible_rows, cols, base_specs)
         for producto_saldo, rows_producto in sorted(saldos_por_producto.items()):
             self.crear_tabla_informe(
                 self.informes_detalle_body,
@@ -1016,13 +1019,21 @@ def crear_tabla_informe(self, parent, titulo, columns, headings, data, height=10
     scroll_x.grid(row=1, column=0, sticky="ew")
     table_frame.grid_rowconfigure(0, weight=1)
     table_frame.grid_columnconfigure(0, weight=1)
+    return tree
 
 
 def crear_graficos_informe(self, specs):
     if not specs:
-        return
+        return None
     panel = tk.Frame(self.informes_detalle_body, bg=self.colors["bg_main"])
     panel.pack(fill="both", expand=True, pady=(0, 12))
+    self.render_graficos_informe_panel(panel, specs)
+    return panel
+
+
+def render_graficos_informe_panel(self, panel, specs):
+    for child in panel.winfo_children():
+        child.destroy()
     for idx, (titulo, data, label_key, value_key, chart_type) in enumerate(specs):
         row = idx // 2
         col = idx % 2
@@ -1036,6 +1047,38 @@ def crear_graficos_informe(self, specs):
         panel.grid_columnconfigure(col, weight=1, uniform="informes_charts")
     for row in range((len(specs) + 1) // 2):
         panel.grid_rowconfigure(row, weight=1, minsize=290)
+
+
+def actualizar_graficos_corte_filtrado(self, panel, visible_rows, columns, base_specs):
+    def parse_number(value):
+        try:
+            return float(str(value or "").replace(",", "").replace("%", "").strip())
+        except Exception:
+            return 0.0
+
+    columns = list(columns or [])
+    rows = []
+    for item in visible_rows or []:
+        values = item.get("values", ())
+        row = {}
+        for idx, col in enumerate(columns):
+            row[col] = values[idx] if idx < len(values) else ""
+        rows.append({
+            "empresa": row.get("empresa"),
+            "producto": row.get("producto"),
+            "retirado_tm": parse_number(row.get("retirado_tm")),
+            "pendiente_tm": parse_number(row.get("pendiente_tm")),
+        })
+    saldos_producto = {}
+    for row in rows:
+        producto = row.get("producto") or "SIN PRODUCTO"
+        saldos_producto[producto] = saldos_producto.get(producto, 0.0) + parse_number(row.get("pendiente_tm"))
+    specs = [
+        ("Descargado por cliente", rows, "empresa", "retirado_tm", "barras"),
+        ("Saldo por cliente", rows, "empresa", "pendiente_tm", "barras"),
+        ("Saldo total por producto", [{"producto": key, "saldo_mt": value} for key, value in sorted(saldos_producto.items())], "producto", "saldo_mt", "barras"),
+    ] + list(base_specs or [])[3:]
+    self.render_graficos_informe_panel(panel, specs)
 
 
 def _conteo_por(rows, key):
