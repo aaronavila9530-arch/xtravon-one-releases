@@ -613,6 +613,71 @@ def render_informe_detalle(self, data):
         fg=self.colors["text_dark"],
     ).pack(anchor="w", padx=14, pady=12)
 
+    if tipo_reporte == "cierre_barco":
+        bodegas_cliente = data.get("reporte_bodegas_cliente", {}) if isinstance(data.get("reporte_bodegas_cliente"), dict) else {}
+        bodega_headers = list(bodegas_cliente.get("headers", []) or [])
+        bodega_columns = ["concepto"] + [f"col_{idx}" for idx, _header in enumerate(bodega_headers)]
+        bodega_headings = {"concepto": "CONCEPTO"}
+        for idx, header_text in enumerate(bodega_headers):
+            bodega_headings[f"col_{idx}"] = header_text
+        bodega_rows = []
+        for row in bodegas_cliente.get("rows", []) or []:
+            item = {"concepto": row.get("concepto")}
+            for idx, value in enumerate(row.get("valores", []) or []):
+                item[f"col_{idx}"] = value
+            bodega_rows.append(item)
+        self.crear_tabla_informe(
+            self.informes_detalle_body,
+            "REPORTE DE SALDOS POR BODEGA",
+            tuple(bodega_columns),
+            bodega_headings,
+            bodega_rows,
+            height=11,
+        )
+        corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
+        rows_por_producto = {}
+        for row in corte_cliente.get("rows", []) or []:
+            producto_row = self.producto_visible_informe(row.get("producto")) or "SIN PRODUCTO"
+            rows_por_producto.setdefault(producto_row, []).append(row)
+        for producto_row, rows_producto in sorted(rows_por_producto.items()):
+            total_cuota = sum(self.safe_number(row.get("cuota_tm")) for row in rows_producto)
+            tabla_rows = []
+            for row in sorted(rows_producto, key=lambda item: str(item.get("empresa") or "")):
+                cuota = self.safe_number(row.get("cuota_tm"))
+                retirado = self.safe_number(row.get("retirado_tm"))
+                tabla_rows.append({
+                    "empresa": row.get("empresa"),
+                    "cuota_pct": (cuota / total_cuota * 100) if total_cuota else 0,
+                    "cuota_tm": cuota,
+                    "cuota_viajes": row.get("cuota_viajes"),
+                    "retirado_tm": retirado,
+                    "retirado_pct": (retirado / cuota * 100) if cuota else 0,
+                    "retirado_viajes": row.get("retirado_viajes"),
+                    "promedio_x_viaje": row.get("promedio_x_viaje"),
+                    "pendiente_tm": row.get("pendiente_tm"),
+                    "pendiente_viajes": row.get("pendiente_viajes"),
+                })
+            self.crear_tabla_informe(
+                self.informes_detalle_body,
+                f"INFORME DE SALDOS DE {producto_row} POR EMPRESA",
+                ("empresa", "cuota_pct", "cuota_tm", "cuota_viajes", "retirado_tm", "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm", "pendiente_viajes"),
+                {
+                    "empresa": "EMPRESA",
+                    "cuota_pct": "CUOTA %",
+                    "cuota_tm": "CUOTA T.M.",
+                    "cuota_viajes": "CUOTA # VIAJES",
+                    "retirado_tm": "RETIRADO T.M.",
+                    "retirado_pct": "RETIRADO %",
+                    "retirado_viajes": "RETIRADO # VIAJES",
+                    "promedio_x_viaje": "PROMEDIO X VIAJE",
+                    "pendiente_tm": "PENDIENTE T.M.",
+                    "pendiente_viajes": "PENDIENTE VIAJES",
+                },
+                tabla_rows,
+                height=16,
+            )
+        return
+
     if tipo_reporte == "sof":
         cards = tk.Frame(self.informes_detalle_body, bg=self.colors["bg_main"])
         cards.pack(fill="x", pady=(0, 12))
