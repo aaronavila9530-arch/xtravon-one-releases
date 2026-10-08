@@ -194,6 +194,7 @@ def install_liquidaciones_choferes_screen(app_class):
         sx.grid(row=1, column=0, sticky="ew")
         table_wrap.grid_rowconfigure(0, weight=1)
         table_wrap.grid_columnconfigure(0, weight=1)
+        self.after(150, self.cargar_liquidaciones_filtros)
 
     def _crear_lienzo_liquidacion(self, parent, titulo, row=0, column=0, columnspan=1):
         panel = tk.Frame(parent, bg=self.colors["bg_card"], highlightbackground=self.colors["border"], highlightthickness=1)
@@ -218,6 +219,22 @@ def install_liquidaciones_choferes_screen(app_class):
             except Exception:
                 pass
         if not params.get("operacion_id"):
+            for item in getattr(self, "liq_operaciones", []) or []:
+                label = str(item.get("label") or "").strip() if isinstance(item, dict) else ""
+                op_id = None
+                if isinstance(item, dict):
+                    op_id = item.get("id") or item.get("operacion_id")
+                if not op_id and label:
+                    try:
+                        op_id = int(label.split("|", 1)[0].strip())
+                    except Exception:
+                        op_id = None
+                if op_id:
+                    params["operacion_id"] = int(op_id)
+                    if label and hasattr(self, "liq_filters"):
+                        self.liq_filters["operacion"].set(label)
+                    break
+        if not params.get("operacion_id"):
             activa = getattr(self, "operacion_activa", None)
             if not activa:
                 try:
@@ -233,6 +250,28 @@ def install_liquidaciones_choferes_screen(app_class):
                         f"{activa.get('fecha_inicio') or activa.get('fecha') or ''} | {activa.get('estado') or ''}"
                     )
                     self.liq_filters["operacion"].set(etiqueta)
+        if not params.get("operacion_id"):
+            try:
+                data_ops = self.api_get_operaciones_buque()
+                operaciones = data_ops.get("data", []) if isinstance(data_ops, dict) else []
+            except Exception:
+                operaciones = []
+            operaciones = [op for op in operaciones if isinstance(op, dict) and op.get("id")]
+            operaciones.sort(
+                key=lambda op: (
+                    str(op.get("fecha_inicio") or op.get("fecha") or ""),
+                    self.safe_int(op.get("id"), 0),
+                ),
+                reverse=True,
+            )
+            if operaciones:
+                op = operaciones[0]
+                params["operacion_id"] = int(op.get("id"))
+                if hasattr(self, "liq_filters") and not self.liq_filters["operacion"].get().strip():
+                    self.liq_filters["operacion"].set(
+                        f"{op.get('id')} | {op.get('nombre_buque') or op.get('buque') or ''} | "
+                        f"{op.get('fecha_inicio') or op.get('fecha') or ''} | {op.get('estado') or ''}"
+                    )
         for key in ("empresa", "producto", "chofer", "placa", "guia", "fecha_desde", "fecha_hasta"):
             value = self.liq_filters.get(key, tk.StringVar()).get().strip()
             if value:
@@ -248,6 +287,8 @@ def install_liquidaciones_choferes_screen(app_class):
             operaciones = [item.get("label", "") for item in self.liq_operaciones]
             opciones = data.get("opciones", {})
             self.configurar_combo_filtrable_despacho(self.liq_widgets["operacion"], operaciones, self.liq_filters["operacion"])
+            if not self.liq_filters["operacion"].get().strip() and operaciones:
+                self.liq_filters["operacion"].set(operaciones[0])
             for key, source in {
                 "empresa": "empresas",
                 "producto": "productos",

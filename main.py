@@ -239,14 +239,26 @@ class ERPElSurcoApp(tk.Tk):
         self.style.map("Gray.TButton", background=[("active", c["accent_light"])])
         self.style.configure(
             "TCombobox",
-            fieldbackground=c["bg_topbar"],
-            background=c["bg_elevated"],
-            foreground=c["text_dark"],
+            fieldbackground="#FFFFFF",
+            background="#F2F1EC",
+            foreground="#050B14",
             arrowcolor=c["accent"],
             selectbackground=c["accent"],
-            selectforeground=c["bg_main"],
+            selectforeground="#050B14",
             font=("Segoe UI", 10),
         )
+        self.style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", "#F2F1EC"), ("disabled", "#D8D6CF")],
+            background=[("readonly", "#F2F1EC"), ("disabled", "#D8D6CF")],
+            foreground=[("readonly", "#050B14"), ("disabled", "#4B4B4B")],
+            selectbackground=[("readonly", "#F2F1EC"), ("focus", c["accent"])],
+            selectforeground=[("readonly", "#050B14"), ("focus", "#050B14")],
+        )
+        self.option_add("*TCombobox*Listbox.background", "#FFFFFF")
+        self.option_add("*TCombobox*Listbox.foreground", "#050B14")
+        self.option_add("*TCombobox*Listbox.selectBackground", c["accent"])
+        self.option_add("*TCombobox*Listbox.selectForeground", "#050B14")
 
     def instalar_treeview_excel_global(self):
         if getattr(ttk, "_xtravon_excel_treeview_installed", False):
@@ -3504,6 +3516,7 @@ class ERPElSurcoApp(tk.Tk):
         table_frame.grid_columnconfigure(0, weight=1)
 
         self.boletas_cache = []
+        self.after(150, self.buscar_operacion_activa_boletas)
 
 
 
@@ -3519,9 +3532,26 @@ class ERPElSurcoApp(tk.Tk):
 
             self.boletas_operaciones_abiertas = abiertas if isinstance(abiertas, list) else []
             if not self.boletas_operaciones_abiertas:
-                activa = self.api_get_operacion_activa()
+                try:
+                    activa = self.api_get_operacion_activa()
+                except Exception:
+                    activa = None
                 if isinstance(activa, dict) and activa.get("id"):
                     self.boletas_operaciones_abiertas = [activa]
+                else:
+                    data_todas = self.api_get_operaciones_buque()
+                    todas = data_todas.get("data", []) if isinstance(data_todas, dict) else []
+                    self.boletas_operaciones_abiertas = [
+                        op for op in todas
+                        if isinstance(op, dict) and op.get("id")
+                    ]
+                    self.boletas_operaciones_abiertas.sort(
+                        key=lambda op: (
+                            str(op.get("fecha_inicio") or op.get("fecha") or ""),
+                            self.safe_int(op.get("id"), 0),
+                        ),
+                        reverse=True,
+                    )
 
             opciones = [
                 f"{op.get('id')} | {op.get('codigo_operacion', '')} | {op.get('nombre_buque', '')}"
@@ -3542,7 +3572,7 @@ class ERPElSurcoApp(tk.Tk):
                 )
                 color = self.colors["text_dark"]
             else:
-                texto = "No hay operacion activa."
+                texto = "No hay operacion disponible."
                 color = self.colors["danger"]
 
             if hasattr(self, "boletas_operacion_label") and self.boletas_operacion_label.winfo_exists():
@@ -3576,19 +3606,24 @@ class ERPElSurcoApp(tk.Tk):
     def asegurar_operacion_activa_boletas(self, mostrar_error=False):
         try:
             if not getattr(self, "operacion_activa", None) or not self.operacion_activa.get("id"):
-                self.operacion_activa = self.api_get_operacion_activa()
+                try:
+                    self.operacion_activa = self.api_get_operacion_activa()
+                except Exception:
+                    self.operacion_activa = None
+                if not self.operacion_activa or not self.operacion_activa.get("id"):
+                    self.buscar_operacion_activa_boletas()
             if hasattr(self, "boletas_operacion_label") and self.boletas_operacion_label.winfo_exists():
                 if self.operacion_activa:
                     self.boletas_operacion_label.configure(
                         text=(
-                            f"Operacion activa: {self.operacion_activa.get('codigo_operacion', '')} | "
+                            f"Operacion seleccionada: {self.operacion_activa.get('codigo_operacion', '')} | "
                             f"Buque: {self.operacion_activa.get('nombre_buque', '')} | "
                             f"Inicio: {self.operacion_activa.get('fecha_inicio', '')}"
                         ),
                         fg=self.colors["text_dark"],
                     )
                 else:
-                    self.boletas_operacion_label.configure(text="No hay operacion activa.", fg=self.colors["danger"])
+                    self.boletas_operacion_label.configure(text="No hay operacion disponible.", fg=self.colors["danger"])
             return self.operacion_activa
         except Exception as e:
             if mostrar_error:
@@ -5502,8 +5537,15 @@ class ERPElSurcoApp(tk.Tk):
                 todas = data_todas.get("data", []) if isinstance(data_todas, dict) else []
                 operaciones = [
                     op for op in todas
-                    if isinstance(op, dict) and str(op.get("estado") or "").strip().upper() == "ABIERTA"
+                    if isinstance(op, dict)
                 ]
+                operaciones.sort(
+                    key=lambda op: (
+                        str(op.get("fecha_inicio") or op.get("fecha") or ""),
+                        self.safe_int(op.get("id"), 0),
+                    ),
+                    reverse=True,
+                )
             activa = None
             try:
                 activa = self.api_get_operacion_activa()
@@ -5573,7 +5615,7 @@ class ERPElSurcoApp(tk.Tk):
 
         self.ejecutar_en_segundo_plano(
             "Operaciones para cuotas",
-            "Buscando operaciones abiertas...",
+            "Buscando operaciones...",
             tarea,
             al_terminar,
         )
@@ -7565,6 +7607,7 @@ class ERPElSurcoApp(tk.Tk):
         self.despacho_body = tk.Frame(body, bg=self.colors["bg_main"])
         self.despacho_body.pack(fill="both", expand=True)
         self.render_despacho_placeholder()
+        self.after(150, self.cargar_despacho_resumen)
 
     def render_despacho_placeholder(self):
         for widget in self.despacho_body.winfo_children():
@@ -7819,14 +7862,36 @@ class ERPElSurcoApp(tk.Tk):
         if self.despacho_resumen:
             self.cargar_despacho_resumen()
 
+    def obtener_operacion_despacho_consulta(self):
+        try:
+            activa = self.api_get_operacion_activa()
+            if isinstance(activa, dict) and activa.get("id"):
+                return activa
+        except Exception:
+            pass
+        try:
+            data = self.api_get_operaciones_buque()
+            operaciones = data.get("data", []) if isinstance(data, dict) else []
+        except Exception:
+            operaciones = []
+        operaciones = [op for op in operaciones if isinstance(op, dict) and op.get("id")]
+        operaciones.sort(
+            key=lambda op: (
+                str(op.get("fecha_inicio") or op.get("fecha") or ""),
+                self.safe_int(op.get("id"), 0),
+            ),
+            reverse=True,
+        )
+        return operaciones[0] if operaciones else None
+
     def cargar_despacho_resumen(self):
         filtros = self.obtener_filtros_despacho()
 
         def tarea():
-            activa = self.api_get_operacion_activa()
+            activa = self.obtener_operacion_despacho_consulta()
             oid = self.safe_int((activa or {}).get("id"), None)
             if not oid:
-                raise RuntimeError("No hay operacion abierta.")
+                raise RuntimeError("No hay operacion disponible.")
             data = self.api_get_despacho_resumen(oid, filtros)
             return {
                 "operacion_activa": activa,

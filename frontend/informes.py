@@ -25,6 +25,8 @@ def install_informes_screen(app_class):
     app_class.crear_graficos_informe = crear_graficos_informe
     app_class.render_graficos_informe_panel = render_graficos_informe_panel
     app_class.actualizar_graficos_corte_filtrado = actualizar_graficos_corte_filtrado
+    app_class.filas_visibles_informe = filas_visibles_informe
+    app_class.vincular_graficos_tabla_informe = vincular_graficos_tabla_informe
     app_class.producto_visible_informe = producto_visible_informe
 
 
@@ -603,19 +605,27 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Horas SOF", self.formatear_numero(total_horas, 2), self.colors["info"])
         self.create_card(cards, "Horas demora", self.formatear_numero(demora_horas, 2), self.colors["warning"])
         self.create_card(cards, "Categorias", self.formatear_numero(len({row.get("tipo") for row in sof})), self.colors["success"])
-        self.crear_graficos_informe(
+        sof_chart_panel = self.crear_graficos_informe(
             [
                 ("Horas por subcategoria", sof, "subcategoria", "horas", "barras"),
                 ("Eventos por tipo", sof, "tipo", "eventos", "circular"),
             ]
         )
-        self.crear_tabla_informe(
+        sof_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "SOF por categoria, subcategoria y bodega",
             ("tipo", "subcategoria", "bodega_numero", "eventos", "horas", "fecha_desde", "fecha_hasta"),
             {"tipo": "Tipo", "subcategoria": "Subcategoria", "bodega_numero": "Bodega", "eventos": "Eventos", "horas": "Horas", "fecha_desde": "Desde", "fecha_hasta": "Hasta"},
             sof,
             height=10,
+        )
+        self.vincular_graficos_tabla_informe(
+            sof_tree,
+            sof_chart_panel,
+            lambda rows: [
+                ("Horas por subcategoria", rows, "subcategoria", "horas", "barras"),
+                ("Eventos por tipo", rows, "tipo", "eventos", "circular"),
+            ],
         )
         self.crear_tabla_informe(
             self.informes_detalle_body,
@@ -643,6 +653,12 @@ def render_informe_detalle(self, data):
 
     cards = tk.Frame(self.informes_detalle_body, bg=self.colors["bg_main"])
     cards.pack(fill="x", pady=(0, 12))
+    bodegas_chart_panel = None
+    cuotas_chart_panel = None
+    duracion_chart_panel = None
+    alertas_chart_panel = None
+    documental_chart_panel = None
+    marchamos_chart_panel = None
 
     if tipo_reporte == "cliente":
         corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
@@ -748,7 +764,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Descargado MT", self.formatear_numero(kpis.get("retirado_mt"), 2), self.colors["success"])
         self.create_card(cards, "Pendiente MT", self.formatear_numero(kpis.get("faltante_mt"), 2), self.colors["warning"])
         self.create_card(cards, "Avance", f"{self.safe_number(kpis.get('avance_descarga_pct')):,.2f}%", self.colors["info"])
-        self.crear_graficos_informe(
+        bodegas_chart_panel = self.crear_graficos_informe(
             [
                 ("Descargado por bodega/producto", bodegas_grafico, "bodega_producto", "retirado_mt", "barras"),
                 ("Estado descarga", graficos.get("estado_descarga", []), "estado", "valor", "circular"),
@@ -767,7 +783,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Descargado MT", self.formatear_numero(total_descargado, 2), self.colors["success"])
         self.create_card(cards, "Saldo MT", self.formatear_numero(total_pendiente, 2), self.colors["warning"])
         self.create_card(cards, "Sobrecuotas", self.formatear_numero(sobrecuotas), self.colors["danger"])
-        self.crear_graficos_informe(
+        cuotas_chart_panel = self.crear_graficos_informe(
             [
                 ("Descargado por cliente/producto", cuotas_grafico, "cliente_producto", "retirado_mt", "barras"),
                 ("Saldo por cliente/producto", cuotas_grafico, "cliente_producto", "saldo_mt", "barras"),
@@ -781,7 +797,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Capacidad MT", self.formatear_numero(resumen.get("capacidad_mt"), 2), self.colors["info"])
         self.create_card(cards, "Descargado MT", self.formatear_numero(resumen.get("retirado_mt"), 2), self.colors["success"])
         self.create_card(cards, "Pendiente MT", self.formatear_numero(resumen.get("faltante_mt"), 2), self.colors["warning"])
-        self.crear_graficos_informe(
+        bodegas_chart_panel = self.crear_graficos_informe(
             [
                 ("Descargado por bodega/producto", bodegas_grafico, "bodega_producto", "retirado_mt", "barras"),
                 ("Pendiente por bodega/producto", bodegas_grafico, "bodega_producto", "faltante_mt", "barras"),
@@ -810,7 +826,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Severidad alta", self.formatear_numero(sum(1 for row in alertas if row.get("severidad") == "ALTA")), self.colors["danger"])
         self.create_card(cards, "Eventos demora", self.formatear_numero(sum(self.safe_number(row.get("eventos")) for row in sof_demoras)), self.colors["warning"])
         self.create_card(cards, "Horas demora", self.formatear_numero(sum(self.safe_number(row.get("horas")) for row in sof_demoras), 2), self.colors["info"])
-        self.crear_graficos_informe(charts)
+        alertas_chart_panel = self.crear_graficos_informe(charts)
 
     elif tipo_reporte in ("productividad", "productividad_documental"):
         duraciones = graficos.get("duracion_por_camion", [])
@@ -820,7 +836,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Completos", self.formatear_numero(kpis.get("completas")), self.colors["success"])
         self.create_card(cards, "Duracion prom.", f"{promedio:,.2f} min", self.colors["info"])
         self.create_card(cards, "MT/viaje", self.formatear_numero(toneladas_por_viaje, 2), self.colors["warning"])
-        self.crear_graficos_informe(
+        duracion_chart_panel = self.crear_graficos_informe(
             [
                 ("Duracion por camion", duraciones, "camion", "duracion_min", "barras"),
                 ("Tendencia diaria MT", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", "lineal"),
@@ -837,7 +853,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Aprobadas", self.formatear_numero(aprobadas), self.colors["success"])
         self.create_card(cards, "Pendientes", self.formatear_numero(pendientes_doc), self.colors["warning"])
         self.create_card(cards, "Estados", self.formatear_numero(len({row.get("estado") for row in documental})), self.colors["info"])
-        self.crear_graficos_informe(
+        documental_chart_panel = self.crear_graficos_informe(
             [
                 ("Guias por estado", documental, "estado", "guias", "barras"),
                 ("Guias por etapa QR", documental, "etapa_qr", "guias", "circular"),
@@ -851,7 +867,7 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "MT asociado", self.formatear_numero(total_mt, 2), self.colors["success"])
         self.create_card(cards, "Choferes", self.formatear_numero(len({row.get("chofer") for row in marchamos if row.get("chofer")})), self.colors["info"])
         self.create_card(cards, "Empresas", self.formatear_numero(len({row.get("empresa") for row in marchamos if row.get("empresa")})), self.colors["warning"])
-        self.crear_graficos_informe(
+        marchamos_chart_panel = self.crear_graficos_informe(
             [
                 ("MT por empresa", marchamos, "empresa", "retirado_mt", "barras"),
                 ("MT por producto", marchamos, "producto", "retirado_mt", "barras"),
@@ -866,12 +882,21 @@ def render_informe_detalle(self, data):
         self.create_card(cards, "Pendiente MT", self.formatear_numero(kpis.get("faltante_mt"), 2), self.colors["warning"])
 
     if tipo_reporte in ("ejecutivo", "bodegas", "sof_alertas"):
-        self.crear_tabla_informe(
+        descarga_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Descarga por bodega",
             ("bodega_numero", "producto", "capacidad_mt", "retirado_mt", "faltante_mt", "avance_pct", "guias"),
             {"bodega_numero": "Bodega", "producto": "Producto", "capacidad_mt": "Capacidad MT", "retirado_mt": "Descargado MT", "faltante_mt": "Pendiente MT", "avance_pct": "Avance %", "guias": "Guias"},
             bodegas,
+        )
+        self.vincular_graficos_tabla_informe(
+            descarga_tree,
+            bodegas_chart_panel or alertas_chart_panel,
+            lambda rows: [
+                ("Descargado por bodega/producto", rows, "bodega_producto", "retirado_mt", "barras"),
+                ("Pendiente por bodega/producto", rows, "bodega_producto", "faltante_mt", "barras"),
+                ("Avance por bodega/producto", rows, "bodega_producto", "avance_pct", "barras"),
+            ],
         )
 
     if tipo_reporte in ("ejecutivo", "cuotas", "sof_alertas"):
@@ -884,16 +909,26 @@ def render_informe_detalle(self, data):
                 rows_producto,
                 height=10,
             )
-        self.crear_tabla_informe(
+        cuotas_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Cuota vs descargado real",
             ("cliente", "producto", "bodega", "cuota_mt", "retirado_mt", "saldo_mt", "avance_pct", "guias"),
             {"cliente": "Cliente", "producto": "Producto", "bodega": "Bodega", "cuota_mt": "Cuota MT", "retirado_mt": "Descargado MT", "saldo_mt": "Pendiente/Sobredescarga MT", "avance_pct": "Avance %", "guias": "Guias"},
             cuotas,
         )
+        self.vincular_graficos_tabla_informe(
+            cuotas_tree,
+            cuotas_chart_panel or alertas_chart_panel,
+            lambda rows: [
+                ("Descargado por cliente/producto", rows, "cliente_producto", "retirado_mt", "barras"),
+                ("Saldo por cliente/producto", rows, "cliente_producto", "saldo_mt", "barras"),
+                ("Avance por cliente/producto", rows, "cliente_producto", "avance_pct", "barras"),
+                ("Viajes por cliente/producto", rows, "cliente_producto", "guias", "barras"),
+            ],
+        )
 
     if tipo_reporte in ("ejecutivo", "productividad", "productividad_documental", "sof_alertas"):
-        self.crear_tabla_informe(
+        productos_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Resumen por producto",
             ("producto", "guias", "retirado_mt"),
@@ -901,7 +936,15 @@ def render_informe_detalle(self, data):
             productos,
             height=7,
         )
-        self.crear_tabla_informe(
+        self.vincular_graficos_tabla_informe(
+            productos_tree,
+            duracion_chart_panel or bodegas_chart_panel or alertas_chart_panel,
+            lambda rows: [
+                ("Descargado por producto", rows, "producto", "retirado_mt", "barras"),
+                ("Guias por producto", rows, "producto", "guias", "barras"),
+            ],
+        )
+        duracion_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Duracion por camion",
             ("camion", "guia", "empresa", "producto", "placa", "duracion_min"),
@@ -912,6 +955,13 @@ def render_informe_detalle(self, data):
                 if isinstance(row, dict)
             ],
             height=9,
+        )
+        self.vincular_graficos_tabla_informe(
+            duracion_tree,
+            duracion_chart_panel,
+            lambda rows: [
+                ("Duracion por camion", rows, "camion", "duracion_min", "barras"),
+            ],
         )
 
     if tipo_reporte in ("ejecutivo", "alertas", "sof_alertas", "documental", "productividad_documental"):
@@ -925,7 +975,7 @@ def render_informe_detalle(self, data):
         )
 
     if tipo_reporte in ("documental", "productividad_documental"):
-        self.crear_tabla_informe(
+        documental_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Estado documental",
             ("estado", "etapa_qr", "aprobada", "guias"),
@@ -933,15 +983,31 @@ def render_informe_detalle(self, data):
             data.get("documental", []),
             height=10,
         )
+        self.vincular_graficos_tabla_informe(
+            documental_tree,
+            documental_chart_panel,
+            lambda rows: [
+                ("Guias por estado", rows, "estado", "guias", "barras"),
+                ("Guias por etapa QR", rows, "etapa_qr", "guias", "circular"),
+            ],
+        )
 
     if tipo_reporte == "sof_alertas" and sof:
-        self.crear_tabla_informe(
+        sof_alertas_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "SOF por categoria y subcategoria",
             ("tipo", "subcategoria", "bodega_numero", "eventos", "horas", "fecha_desde", "fecha_hasta"),
             {"tipo": "Tipo", "subcategoria": "Subcategoria", "bodega_numero": "Bodega", "eventos": "Eventos", "horas": "Horas", "fecha_desde": "Desde", "fecha_hasta": "Hasta"},
             sof,
             height=10,
+        )
+        self.vincular_graficos_tabla_informe(
+            sof_alertas_tree,
+            alertas_chart_panel,
+            lambda rows: [
+                ("Horas por subcategoria", rows, "subcategoria", "horas", "barras"),
+                ("Eventos por tipo", rows, "tipo", "eventos", "circular"),
+            ],
         )
 
     if tipo_reporte == "marchamos":
@@ -953,7 +1019,7 @@ def render_informe_detalle(self, data):
             for row in data.get("marchamos", [])
             if isinstance(row, dict)
         ]
-        self.crear_tabla_informe(
+        marchamos_tree = self.crear_tabla_informe(
             self.informes_detalle_body,
             "Marchamos por viaje",
             ("guia", "empresa", "producto", "chofer", "placa", "bodega_numero", "numero_tolva", "marchamos", "peso_vacio", "peso_lleno", "peso_neto", "fecha"),
@@ -973,6 +1039,15 @@ def render_informe_detalle(self, data):
             },
             marchamos,
             height=14,
+        )
+        self.vincular_graficos_tabla_informe(
+            marchamos_tree,
+            marchamos_chart_panel,
+            lambda rows: [
+                ("KG por empresa", rows, "empresa", "peso_neto", "barras"),
+                ("KG por producto", rows, "producto", "peso_neto", "barras"),
+                ("KG por chofer", rows, "chofer", "peso_neto", "barras"),
+            ],
         )
 
 
@@ -1047,6 +1122,60 @@ def render_graficos_informe_panel(self, panel, specs):
         panel.grid_columnconfigure(col, weight=1, uniform="informes_charts")
     for row in range((len(specs) + 1) // 2):
         panel.grid_rowconfigure(row, weight=1, minsize=290)
+
+
+def _parse_numero_informe(value):
+    try:
+        texto = str(value or "").replace("%", "").strip()
+        if "," in texto and "." in texto:
+            texto = texto.replace(",", "")
+        else:
+            texto = texto.replace(" ", "").replace(",", ".")
+        return float(texto)
+    except Exception:
+        return 0.0
+
+
+def filas_visibles_informe(self, visible_rows, columns):
+    numericas = {
+        "capacidad_mt", "retirado_mt", "faltante_mt", "avance_pct", "guias",
+        "cuota_mt", "saldo_mt", "duracion_min", "eventos", "horas",
+        "peso_vacio", "peso_lleno", "peso_neto", "cuota_pct", "cuota_viajes",
+        "retirado_pct", "retirado_viajes", "promedio_x_viaje", "pendiente_tm",
+        "pendiente_viajes",
+    }
+    rows = []
+    for item in visible_rows or []:
+        values = item.get("values", ()) if isinstance(item, dict) else ()
+        row = {}
+        for idx, col in enumerate(list(columns or [])):
+            value = values[idx] if idx < len(values) else ""
+            row[col] = _parse_numero_informe(value) if col in numericas else value
+        producto = self.producto_visible_informe(row.get("producto")) if hasattr(self, "producto_visible_informe") else str(row.get("producto") or "")
+        row["producto"] = producto
+        cliente = row.get("cliente") or row.get("empresa") or "SIN EMPRESA"
+        row["cliente"] = cliente
+        bodega = row.get("bodega")
+        if not bodega:
+            bodega_numero = row.get("bodega_numero")
+            bodega = f"Bodega {bodega_numero}" if bodega_numero not in (None, "") else "SIN BODEGA"
+        row["bodega"] = bodega
+        row["cliente_producto"] = f"{cliente} | {producto}"
+        row["bodega_producto"] = f"{bodega} | {producto}"
+        rows.append(row)
+    return rows
+
+
+def vincular_graficos_tabla_informe(self, tree, panel, specs_builder):
+    if tree is None or panel is None or specs_builder is None:
+        return
+    columns = list(tree["columns"])
+
+    def actualizar(visible_rows, cols=columns, target=panel, builder=specs_builder):
+        rows = self.filas_visibles_informe(visible_rows, cols)
+        self.render_graficos_informe_panel(target, builder(rows))
+
+    tree._xtravon_excel_on_filter = actualizar
 
 
 def actualizar_graficos_corte_filtrado(self, panel, visible_rows, columns, base_specs):
