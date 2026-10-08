@@ -28,6 +28,7 @@ def install_informes_screen(app_class):
     app_class.filas_visibles_informe = filas_visibles_informe
     app_class.vincular_graficos_tabla_informe = vincular_graficos_tabla_informe
     app_class.producto_visible_informe = producto_visible_informe
+    app_class.dibujar_silueta_cierre_barco = dibujar_silueta_cierre_barco
 
 
 def show_informes(self):
@@ -615,6 +616,18 @@ def render_informe_detalle(self, data):
 
     if tipo_reporte == "cierre_barco":
         bodegas_cliente = data.get("reporte_bodegas_cliente", {}) if isinstance(data.get("reporte_bodegas_cliente"), dict) else {}
+        silueta_panel = tk.Frame(self.informes_detalle_body, bg=self.colors["bg_card"], highlightbackground=self.colors["border"], highlightthickness=1)
+        silueta_panel.pack(fill="x", pady=(0, 12))
+        tk.Label(
+            silueta_panel,
+            text="REPORTE DE SALDOS POR BODEGA",
+            font=("Segoe UI", 13, "bold"),
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_dark"],
+        ).pack(anchor="w", padx=14, pady=(12, 4))
+        silueta_canvas = tk.Canvas(silueta_panel, bg=self.colors["bg_card"], height=255, highlightthickness=0)
+        silueta_canvas.pack(fill="x", padx=14, pady=(0, 12))
+        silueta_canvas.after(80, lambda c=silueta_canvas, reporte=bodegas_cliente, op=operacion: self.dibujar_silueta_cierre_barco(c, reporte, op))
         bodega_headers = list(bodegas_cliente.get("headers", []) or [])
         bodega_columns = ["concepto"] + [f"col_{idx}" for idx, _header in enumerate(bodega_headers)]
         bodega_headings = {"concepto": "CONCEPTO"}
@@ -636,10 +649,44 @@ def render_informe_detalle(self, data):
         )
         corte_cliente = data.get("corte_cliente", {}) if isinstance(data.get("corte_cliente"), dict) else {}
         rows_por_producto = {}
+        productos_presentes = set()
+        producto_row_bodega = next((row for row in bodegas_cliente.get("rows", []) or [] if str(row.get("concepto") or "").upper() == "PRODUCTO"), None)
+        if producto_row_bodega:
+            productos_presentes.update(
+                self.producto_visible_informe(value)
+                for value in producto_row_bodega.get("valores", []) or []
+                if value and str(value).strip().upper() not in ("TOTAL", "BARCO")
+            )
+        productos_presentes.update(
+            self.producto_visible_informe(row.get("producto"))
+            for row in data.get("saldos_totales_producto", []) or []
+            if isinstance(row, dict) and row.get("producto")
+        )
         for row in corte_cliente.get("rows", []) or []:
             producto_row = self.producto_visible_informe(row.get("producto")) or "SIN PRODUCTO"
+            productos_presentes.add(producto_row)
             rows_por_producto.setdefault(producto_row, []).append(row)
-        for producto_row, rows_producto in sorted(rows_por_producto.items()):
+        for row in data.get("saldos_cliente", []) or []:
+            if not isinstance(row, dict):
+                continue
+            producto_saldo = self.producto_visible_informe(row.get("producto")) or "SIN PRODUCTO"
+            productos_presentes.add(producto_saldo)
+            key_empresa = str(row.get("empresa") or row.get("cliente") or "").strip().upper()
+            ya_existe = any(str(item.get("empresa") or "").strip().upper() == key_empresa for item in rows_por_producto.get(producto_saldo, []))
+            if not ya_existe:
+                rows_por_producto.setdefault(producto_saldo, []).append({
+                    "empresa": row.get("empresa") or row.get("cliente"),
+                    "producto": producto_saldo,
+                    "cuota_tm": self.safe_number(row.get("saldo_mt")),
+                    "retirado_tm": 0,
+                    "cuota_viajes": 0,
+                    "retirado_viajes": 0,
+                    "promedio_x_viaje": self.safe_number(data.get("kpis", {}).get("promedio_mt_camion")),
+                    "pendiente_tm": self.safe_number(row.get("saldo_mt")),
+                    "pendiente_viajes": 0,
+                })
+        for producto_row in sorted(productos_presentes):
+            rows_producto = rows_por_producto.get(producto_row, [])
             total_cuota = sum(self.safe_number(row.get("cuota_tm")) for row in rows_producto)
             tabla_rows = []
             for row in sorted(rows_producto, key=lambda item: str(item.get("empresa") or "")):
@@ -656,6 +703,19 @@ def render_informe_detalle(self, data):
                     "promedio_x_viaje": row.get("promedio_x_viaje"),
                     "pendiente_tm": row.get("pendiente_tm"),
                     "pendiente_viajes": row.get("pendiente_viajes"),
+                })
+            if not tabla_rows:
+                tabla_rows.append({
+                    "empresa": f"SIN CUOTAS DETALLADAS PARA {producto_row}",
+                    "cuota_pct": 0,
+                    "cuota_tm": 0,
+                    "cuota_viajes": 0,
+                    "retirado_tm": 0,
+                    "retirado_pct": 0,
+                    "retirado_viajes": 0,
+                    "promedio_x_viaje": 0,
+                    "pendiente_tm": 0,
+                    "pendiente_viajes": 0,
                 })
             self.crear_tabla_informe(
                 self.informes_detalle_body,
@@ -1139,6 +1199,68 @@ def producto_visible_informe(self, producto):
     if valor.upper() in ("", "TODOS", "ALL", "SIN PRODUCTO", "NONE", "NULL"):
         return "Cuota general"
     return valor
+
+
+def dibujar_silueta_cierre_barco(self, canvas, reporte, operacion):
+    canvas.delete("all")
+    width = max(canvas.winfo_width(), 940)
+    height = max(canvas.winfo_height(), 240)
+    bg = self.colors.get("bg_card", "#0C1D2E")
+    fg = self.colors.get("text_dark", "#FFFFFF")
+    accent = self.colors.get("accent", "#11C5E8")
+    canvas.configure(bg=bg)
+    headers = list((reporte or {}).get("headers", [])[:-1])
+    producto_row = next((row for row in (reporte or {}).get("rows", []) or [] if str(row.get("concepto") or "").upper() == "PRODUCTO"), {})
+    productos = list(producto_row.get("valores", [])[:-1]) if producto_row else []
+    if not headers:
+        headers = [f"BODEGA {idx}" for idx in range(1, 6)]
+    count = max(1, min(len(headers), 6))
+    hold_w = min(132, max(92, (width - 300) / count))
+    base_x = 120
+    base_y = height - 58
+    hold_h = 100
+    line = "#D8E2EA"
+
+    canvas.create_line(42, base_y, base_x, base_y, fill=line, width=2)
+    canvas.create_line(42, base_y, 12, base_y - 36, fill=line, width=2)
+    canvas.create_line(12, base_y - 36, base_x, base_y - 36, fill=line, width=2)
+    for idx in range(count):
+        hx = base_x + idx * hold_w
+        canvas.create_rectangle(hx, base_y - hold_h, hx + hold_w, base_y, outline=line, width=2, fill=bg)
+        label = str(headers[idx]).replace("BODEGA ", "BODEGA#")
+        prod = self.producto_visible_informe(productos[idx] if idx < len(productos) else "").upper()
+        canvas.create_text(hx + hold_w / 2, base_y - hold_h + 24, text=label, fill=fg, font=("Segoe UI", 9, "bold"))
+        canvas.create_text(hx + hold_w / 2, base_y - hold_h + 44, text=prod, fill=fg, font=("Segoe UI", 9, "bold"))
+        crane_x = hx + hold_w * 0.55
+        canvas.create_line(crane_x, base_y - hold_h, crane_x + 20, base_y - hold_h - 52, fill=line, width=2)
+        canvas.create_line(crane_x, base_y - hold_h - 52, crane_x + 58, base_y - hold_h - 66, fill=line, width=2)
+        canvas.create_line(crane_x + 58, base_y - hold_h - 66, crane_x + 22, base_y - hold_h - 34, fill=line, width=2)
+        canvas.create_line(crane_x + 48, base_y - hold_h - 38, crane_x + 48, base_y - hold_h - 18, fill=line, width=1)
+        canvas.create_polygon(
+            crane_x + 36,
+            base_y - hold_h - 18,
+            crane_x + 60,
+            base_y - hold_h - 18,
+            crane_x + 48,
+            base_y - hold_h - 4,
+            outline=line,
+            fill=bg,
+            width=1,
+        )
+
+    bow_x = base_x + count * hold_w
+    canvas.create_line(bow_x, base_y, bow_x + 150, base_y, fill=line, width=2)
+    canvas.create_line(bow_x + 150, base_y, bow_x + 210, base_y - 54, fill=line, width=2)
+    canvas.create_line(bow_x + 210, base_y - 54, bow_x + 122, base_y - 54, fill=line, width=2)
+    canvas.create_line(bow_x + 122, base_y - 54, bow_x + 122, base_y - 92, fill=line, width=2)
+    cabin_x = bow_x + 12
+    cabin_y = base_y - 154
+    canvas.create_rectangle(cabin_x, cabin_y, cabin_x + 92, base_y - 82, outline=line, width=2, fill=bg)
+    for wx in (12, 38, 66):
+        for wy in (12, 38):
+            canvas.create_rectangle(cabin_x + wx, cabin_y + wy, cabin_x + wx + 10, cabin_y + wy + 10, outline=line, fill=bg)
+    canvas.create_text(bow_x + 82, base_y - 22, text=str((operacion or {}).get("nombre_buque") or "")[:28], fill=fg, font=("Segoe UI", 7, "bold"))
+    canvas.create_rectangle(42, base_y + 8, min(width - 40, bow_x + 206), base_y + 16, outline="", fill=accent)
 
 
 def crear_tabla_informe(self, parent, titulo, columns, headings, data, height=10):
