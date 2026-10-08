@@ -96,6 +96,7 @@ def build_informes_busqueda_tab(self, parent):
             "SOF y alertas",
             "Productividad y documental",
             "Marchamos por viaje",
+            "Cierre de barco",
         ],
         state="readonly",
         width=30,
@@ -273,6 +274,19 @@ def obtener_parametros_informe(self):
     return params
 
 
+def validar_informe_cierre_barco(self, operacion):
+    if _codigo_tipo_reporte(self.informes_tipo_reporte_var.get()) != "cierre_barco":
+        return True
+    estado = str((operacion or {}).get("estado") or "").strip().upper()
+    if estado == "CERRADA":
+        return True
+    messagebox.showwarning(
+        "Cierre de barco no disponible",
+        "El reporte Cierre de barco solo se habilita cuando el buque esta CERRADA.",
+    )
+    return False
+
+
 def limpiar_filtros_informes(self):
     for var in getattr(self, "informes_filter_vars", {}).values():
         var.set("")
@@ -398,6 +412,8 @@ def ver_informe_seleccionado(self):
     operacion = self.obtener_operacion_informe_seleccionada()
     if not operacion:
         return
+    if not self.validar_informe_cierre_barco(operacion):
+        return
 
     params = self.obtener_parametros_informe()
 
@@ -420,6 +436,8 @@ def ver_informe_seleccionado(self):
 def descargar_informe_seleccionado(self):
     operacion = self.obtener_operacion_informe_seleccionada()
     if not operacion:
+        return
+    if not self.validar_informe_cierre_barco(operacion):
         return
 
     formato_ui = self.informes_exportar_formato_var.get().strip().lower()
@@ -1231,6 +1249,7 @@ def _lectura_reporte(tipo):
         "productividad_documental": "Productividad y documental: unifica rendimiento por camion, tendencia, producto y estado documental para seguimiento ejecutivo.",
         "documental": "Diferencias documentales: muestra aprobaciones, pendientes, estados operativos, etapas QR y riesgos de trazabilidad documental.",
         "marchamos": "Marchamos por viaje: lista los marchamos capturados en tercer escaneo, vinculados a guia, empresa, producto, chofer, placa, peso y bodega/tolva.",
+        "cierre_barco": "Cierre de barco: habilitado solo para buques cerrados; emite saldos por bodega y saldos por empresa separados por producto.",
     }
     return textos.get(tipo, textos["cliente"])
 
@@ -1249,6 +1268,7 @@ def _codigo_tipo_reporte(label):
         "Productividad por camion": "productividad",
         "Diferencias documentales": "documental",
         "Marchamos por viaje": "marchamos",
+        "Cierre de barco": "cierre_barco",
     }
     return mapa.get(label, "ejecutivo")
 
