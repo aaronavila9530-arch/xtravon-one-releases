@@ -513,6 +513,18 @@ def render_informe_detalle(self, data):
         for row in data.get("saldos_cliente", [])
         if isinstance(row, dict)
     ]
+    saldos_por_producto = {}
+    for row in saldos_cliente:
+        producto_saldo = row.get("producto") or "Cuota general"
+        saldos_por_producto.setdefault(producto_saldo, []).append({
+            "empresa": row.get("empresa"),
+            "saldo_mt": row.get("saldo_mt"),
+        })
+    for producto_saldo, rows_producto in saldos_por_producto.items():
+        rows_producto.append({
+            "empresa": f"TOTAL {producto_saldo}:",
+            "saldo_mt": sum(self.safe_number(row.get("saldo_mt")) for row in rows_producto),
+        })
     saldos_producto = [
         {
             "producto": self.producto_visible_informe(row.get("producto")),
@@ -681,14 +693,15 @@ def render_informe_detalle(self, data):
             },
             corte_rows,
         )
-        self.crear_tabla_informe(
-            self.informes_detalle_body,
-            "INFORME DE SALDOS POR EMPRESA",
-            ("empresa", "producto", "saldo_mt"),
-            {"empresa": "EMPRESA", "producto": "PRODUCTO", "saldo_mt": "T.M."},
-            saldos_cliente,
-            height=12,
-        )
+        for producto_saldo, rows_producto in sorted(saldos_por_producto.items()):
+            self.crear_tabla_informe(
+                self.informes_detalle_body,
+                f"INFORME DE SALDOS {producto_saldo} POR EMPRESA",
+                ("empresa", "saldo_mt"),
+                {"empresa": "EMPRESA", "saldo_mt": "T.M."},
+                rows_producto,
+                height=12,
+            )
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "TOTALES DE SALDOS POR PRODUCTO",
@@ -859,14 +872,15 @@ def render_informe_detalle(self, data):
         )
 
     if tipo_reporte in ("ejecutivo", "cuotas", "sof_alertas"):
-        self.crear_tabla_informe(
-            self.informes_detalle_body,
-            "Informe de saldos por empresa",
-            ("empresa", "producto", "saldo_mt"),
-            {"empresa": "Empresa", "producto": "Producto", "saldo_mt": "T.M."},
-            saldos_cliente,
-            height=10,
-        )
+        for producto_saldo, rows_producto in sorted(saldos_por_producto.items()):
+            self.crear_tabla_informe(
+                self.informes_detalle_body,
+                f"Informe de saldos {producto_saldo} por empresa",
+                ("empresa", "saldo_mt"),
+                {"empresa": "Empresa", "saldo_mt": "T.M."},
+                rows_producto,
+                height=10,
+            )
         self.crear_tabla_informe(
             self.informes_detalle_body,
             "Cuota vs descargado real",
