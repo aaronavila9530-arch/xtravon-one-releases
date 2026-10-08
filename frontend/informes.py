@@ -513,6 +513,14 @@ def render_informe_detalle(self, data):
         for row in data.get("saldos_cliente", [])
         if isinstance(row, dict)
     ]
+    saldos_producto = [
+        {
+            "producto": self.producto_visible_informe(row.get("producto")),
+            "saldo_mt": row.get("saldo_mt"),
+        }
+        for row in data.get("saldos_totales_producto", []) or []
+        if isinstance(row, dict)
+    ]
     for total in data.get("saldos_totales_producto", []) or []:
         if isinstance(total, dict):
             producto_total = self.producto_visible_informe(total.get("producto"))
@@ -649,6 +657,7 @@ def render_informe_detalle(self, data):
             [
                 ("Descargado por cliente", cuotas, "cliente", "retirado_mt", "barras"),
                 ("Saldo por cliente", corte_rows, "empresa", "pendiente_tm", "barras"),
+                ("Saldo total por producto", saldos_producto, "producto", "saldo_mt", "barras"),
                 ("Pendiente por bodega", graficos.get("faltante_bodegas", []), "bodega", "faltante_mt", "barras"),
                 ("Tendencia diaria MT", graficos.get("tendencia_fecha", []), "fecha", "retirado_mt", "lineal"),
             ]
@@ -679,6 +688,14 @@ def render_informe_detalle(self, data):
             {"empresa": "EMPRESA", "producto": "PRODUCTO", "saldo_mt": "T.M."},
             saldos_cliente,
             height=12,
+        )
+        self.crear_tabla_informe(
+            self.informes_detalle_body,
+            "TOTALES DE SALDOS POR PRODUCTO",
+            ("producto", "saldo_mt"),
+            {"producto": "PRODUCTO", "saldo_mt": "T.M."},
+            saldos_producto,
+            height=5,
         )
         bodegas_cliente = data.get("reporte_bodegas_cliente", {}) if isinstance(data.get("reporte_bodegas_cliente"), dict) else {}
         bodega_headers = list(bodegas_cliente.get("headers", []) or [])
