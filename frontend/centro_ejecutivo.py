@@ -565,6 +565,7 @@ def filtrar_graficos_centro_por_params(graficos, params):
         "retiro_por_chofer",
         "duracion_por_camion",
         "tendencia_fecha",
+        "estado_guias_detalle",
     ):
         if isinstance(graficos.get(key), list):
             filtrado[key] = filtrar_rows_centro_por_params(graficos.get(key), params)
@@ -1488,6 +1489,55 @@ def normalizar_estado_descarga_visible_centro(self, data):
     return normalizados
 
 
+def hay_filtros_centro(params):
+    return any(params.get(key) for key in ("empresa", "producto", "bodega_numero"))
+
+
+def estado_descarga_desde_rows_centro(self, rows, fallback):
+    descargado = sum(self.safe_number(row.get("retirado_mt"), 0) for row in rows if isinstance(row, dict))
+    pendiente = sum(self.safe_number(row.get("faltante_mt"), 0) for row in rows if isinstance(row, dict))
+    if descargado <= 0 and pendiente <= 0:
+        return fallback
+    return [
+        {"estado": "Descargado", "valor": descargado},
+        {"estado": "Pendiente de descarga", "valor": pendiente},
+    ]
+
+
+def estado_guias_desde_rows_centro(self, graficos, params, fallback, rows_bodega):
+    detalle = filtrar_rows_centro_por_params(graficos.get("estado_guias_detalle", []), params)
+    acumulado = {}
+    for row in detalle:
+        if not isinstance(row, dict):
+            continue
+        estado = str(row.get("estado") or "").strip() or "Sin estado"
+        acumulado[estado] = acumulado.get(estado, 0) + self.safe_number(row.get("valor"), 0)
+    if acumulado:
+        return [{"estado": estado, "valor": valor} for estado, valor in acumulado.items()]
+
+    completas = sum(self.safe_number(row.get("guias"), 0) for row in rows_bodega if isinstance(row, dict))
+    if completas > 0:
+        return [
+            {"estado": "Completas", "valor": completas},
+            {"estado": "Pendientes", "valor": 0},
+        ]
+    return fallback
+
+
+def agrupar_tendencia_fecha_centro(self, rows):
+    acumulado = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        fecha = str(row.get("fecha") or "").strip()
+        if not fecha:
+            continue
+        item = acumulado.setdefault(fecha, {"fecha": fecha, "guias": 0, "retirado_mt": 0})
+        item["guias"] += self.safe_number(row.get("guias"), 0)
+        item["retirado_mt"] += self.safe_number(row.get("retirado_mt"), 0)
+    return [acumulado[key] for key in sorted(acumulado)]
+
+
 def render_graficos_operativos_centro(self, graficos, filtros_activos=None):
     for widget in self.centro_charts_frame.winfo_children():
         widget.destroy()
@@ -1525,8 +1575,12 @@ def render_graficos_operativos_centro(self, graficos, filtros_activos=None):
         for row in retiro_producto_base
         if isinstance(row, dict)
     ]
-    tendencia_mt = filtrar_rows_centro_por_params(graficos.get("tendencia_fecha", []), params_actuales)
+    tendencia_mt = agrupar_tendencia_fecha_centro(self, filtrar_rows_centro_por_params(graficos.get("tendencia_fecha", []), params_actuales))
     estado_descarga = graficos.get("estado_descarga", [])
+    estado_guias = graficos.get("estado_guias", [])
+    if hay_filtros_centro(params_actuales):
+        estado_descarga = estado_descarga_desde_rows_centro(self, avance_bodegas_descargado, estado_descarga)
+        estado_guias = estado_guias_desde_rows_centro(self, graficos, params_actuales, estado_guias, avance_bodegas_descargado)
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
         f"Descargado por bodega (MT){sufijo_filtro}",
@@ -1568,10 +1622,10 @@ def render_graficos_operativos_centro(self, graficos, filtros_activos=None):
         0,
         lambda item: self.aplicar_filtro_centro_desde_click("producto", item.get("producto")),
     )
-    self.crear_chart_circular(charts_grid, "Estado de guias", graficos.get("estado_guias", []), "estado", "valor", 2, 1)
-    self.crear_chart_lineal(charts_grid, "Tendencia diaria descargado (MT)", tendencia_mt, "fecha", "retirado_mt", 3, 0)
+    self.crear_chart_circular(charts_grid, "Estado de guias", estado_guias, "estado", "valor", 2, 1)
+    self.crear_chart_lineal(charts_grid, f"Tendencia diaria descargado (MT){sufijo_filtro}", tendencia_mt, "fecha", "retirado_mt", 3, 0)
     duracion_camion = filtrar_rows_centro_por_params(graficos.get("duracion_por_camion", []), params_actuales)
-    self.crear_chart_barras(charts_grid, "Duracion por camion (min)", duracion_camion, "camion", "duracion_min", 3, 1)
+    self.crear_chart_barras(charts_grid, f"Duracion por camion (min){sufijo_filtro}", duracion_camion, "camion", "duracion_min", 3, 1)
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
         f"Avance por bodega (%){sufijo_filtro}",
