@@ -412,6 +412,7 @@ def analizar_operacion_centro(self, silencioso=False):
         alertas = data.get("alertas") if isinstance(data.get("alertas"), list) else []
         plan_viajes = data.get("plan_viajes") if isinstance(data.get("plan_viajes"), dict) else {}
         clientes = data.get("clientes") if isinstance(data.get("clientes"), list) else []
+        clientes_filtrados = filtrar_clientes_centro_por_params(clientes, params)
 
         self.render_control_operativo_centro({
             "operacion": operacion,
@@ -433,7 +434,7 @@ def analizar_operacion_centro(self, silencioso=False):
                     "pendiente_mt": self.safe_number(row.get("saldo_mt", row.get("faltante_mt")), 0),
                     "avance_pct": row.get("avance_pct", 0),
                 }
-                for row in clientes
+                for row in clientes_filtrados
                 if isinstance(row, dict)
             ],
         })
@@ -454,6 +455,62 @@ def analizar_operacion_centro(self, silencioso=False):
             tarea,
             al_terminar,
         )
+
+
+def normalizar_filtro_centro(valor):
+    return str(valor or "").strip().upper()
+
+
+def producto_match_centro(producto_row, producto_filtro):
+    filtro = normalizar_filtro_centro(producto_filtro)
+    if not filtro:
+        return True
+    producto = normalizar_filtro_centro(producto_row)
+    if producto in ("", "TODOS", "ALL", "CUOTA GENERAL"):
+        return False
+    partes = [part.strip() for part in producto.replace(",", "/").split("/") if part.strip()]
+    return filtro == producto or filtro in partes
+
+
+def bodega_match_centro(row, bodega_filtro):
+    filtro = str(bodega_filtro or "").strip()
+    if not filtro:
+        return True
+    import re
+    match = re.search(r"\d+", filtro)
+    filtro = match.group(0) if match else filtro
+    valores = []
+    for item in row.get("bodega_numeros") or []:
+        valores.append(str(item).strip())
+    bodega_numero = row.get("bodega_numero")
+    if bodega_numero not in (None, "", 0):
+        valores.append(str(bodega_numero).strip())
+    bodega_texto = str(row.get("bodega") or "")
+    valores.extend(re.findall(r"\d+", bodega_texto))
+    if not valores and bodega_texto.strip().upper() == "TODAS":
+        return False
+    return filtro in set(valores)
+
+
+def filtrar_clientes_centro_por_params(clientes, params):
+    empresa_filtro = normalizar_filtro_centro(params.get("empresa"))
+    producto_filtro = params.get("producto")
+    bodega_filtro = params.get("bodega_numero")
+    if not empresa_filtro and not producto_filtro and not bodega_filtro:
+        return clientes
+    filtrados = []
+    for row in clientes:
+        if not isinstance(row, dict):
+            continue
+        empresa = normalizar_filtro_centro(row.get("empresa") or row.get("cliente"))
+        if empresa_filtro and empresa != empresa_filtro:
+            continue
+        if not producto_match_centro(row.get("producto"), producto_filtro):
+            continue
+        if not bodega_match_centro(row, bodega_filtro):
+            continue
+        filtrados.append(row)
+    return filtrados
 
 
 def programar_filtrado_centro(self, delay=550):
