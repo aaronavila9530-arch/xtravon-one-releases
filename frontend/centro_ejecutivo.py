@@ -413,12 +413,14 @@ def analizar_operacion_centro(self, silencioso=False):
         plan_viajes = data.get("plan_viajes") if isinstance(data.get("plan_viajes"), dict) else {}
         clientes = data.get("clientes") if isinstance(data.get("clientes"), list) else []
         clientes_filtrados = filtrar_clientes_centro_por_params(clientes, params)
+        bodegas_filtradas = filtrar_rows_centro_por_params(bodegas, params)
+        graficos_filtrados = filtrar_graficos_centro_por_params(graficos, params)
 
         self.render_control_operativo_centro({
             "operacion": operacion,
-            "bodegas": bodegas,
+            "bodegas": bodegas_filtradas,
             "kpis": kpis,
-            "graficos": graficos,
+            "graficos": graficos_filtrados,
             "alertas": alertas,
             "plan_viajes": plan_viajes,
             "cuotas_vs_retiro": [
@@ -511,6 +513,55 @@ def filtrar_clientes_centro_por_params(clientes, params):
             continue
         filtrados.append(row)
     return filtrados
+
+
+def row_match_centro_por_params(row, params):
+    if not isinstance(row, dict):
+        return False
+    empresa_filtro = normalizar_filtro_centro(params.get("empresa"))
+    if empresa_filtro:
+        empresa = normalizar_filtro_centro(row.get("empresa") or row.get("cliente"))
+        if empresa and empresa != empresa_filtro:
+            return False
+    producto_filtro = params.get("producto")
+    if producto_filtro and (row.get("producto") not in (None, "")):
+        if not producto_match_centro(row.get("producto"), producto_filtro):
+            return False
+    bodega_filtro = params.get("bodega_numero")
+    if bodega_filtro and any(row.get(key) not in (None, "", [], 0) for key in ("bodega", "bodega_numero", "bodega_numeros")):
+        if not bodega_match_centro(row, bodega_filtro):
+            return False
+    return True
+
+
+def filtrar_rows_centro_por_params(rows, params):
+    if not isinstance(rows, list):
+        return []
+    if not any(params.get(key) for key in ("empresa", "producto", "bodega_numero")):
+        return rows
+    return [row for row in rows if row_match_centro_por_params(row, params)]
+
+
+def filtrar_graficos_centro_por_params(graficos, params):
+    if not isinstance(graficos, dict):
+        return {}
+    if not any(params.get(key) for key in ("empresa", "producto", "bodega_numero")):
+        return graficos
+    filtrado = dict(graficos)
+    for key in (
+        "avance_bodegas",
+        "avance_bodegas_detalle",
+        "faltante_bodegas",
+        "retiro_por_cliente",
+        "cuota_vs_retiro_cliente",
+        "retiro_por_producto",
+        "retiro_por_chofer",
+        "duracion_por_camion",
+        "tendencia_fecha",
+    ):
+        if isinstance(graficos.get(key), list):
+            filtrado[key] = filtrar_rows_centro_por_params(graficos.get(key), params)
+    return filtrado
 
 
 def programar_filtrado_centro(self, delay=550):
