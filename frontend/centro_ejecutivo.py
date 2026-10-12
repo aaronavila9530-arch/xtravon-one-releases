@@ -55,6 +55,9 @@ def install_centro_ejecutivo_screen(app_class):
     app_class.normalizar_estado_descarga_visible_centro = normalizar_estado_descarga_visible_centro
     app_class.crear_chart_barras_interactivo_centro = crear_chart_barras_interactivo_centro
     app_class.configurar_sync_filtro_tabla_centro = configurar_sync_filtro_tabla_centro
+    app_class.params_centro_desde_filtro_tabla = params_centro_desde_filtro_tabla
+    app_class.params_centro_desde_rows_tabla = params_centro_desde_rows_tabla
+    app_class.actualizar_graficos_centro_desde_filtro_tabla = actualizar_graficos_centro_desde_filtro_tabla
 
 
 def show_centro_ejecutivo(self):
