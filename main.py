@@ -5529,7 +5529,9 @@ class ERPElSurcoApp(tk.Tk):
             fg=self.colors["text_dark"],
         ).pack(anchor="w", pady=(0, 4))
         saldos_columns = ("cliente", "producto", "cuota_base", "retirado", "saldo", "ajustada")
-        self.cuota_saldos_tree = ttk.Treeview(saldos_frame, columns=saldos_columns, show="headings", height=4)
+        saldos_table = tk.Frame(saldos_frame, bg=self.colors["bg_card"])
+        saldos_table.pack(fill="both")
+        self.cuota_saldos_tree = ttk.Treeview(saldos_table, columns=saldos_columns, show="headings", height=9)
         for col, heading, width in [
             ("cliente", "Cliente", 240),
             ("producto", "Producto", 130),
@@ -5540,7 +5542,14 @@ class ERPElSurcoApp(tk.Tk):
         ]:
             self.cuota_saldos_tree.heading(col, text=heading)
             self.cuota_saldos_tree.column(col, width=width, anchor="center")
-        self.cuota_saldos_tree.pack(fill="x")
+        saldos_y = ttk.Scrollbar(saldos_table, orient="vertical", command=self.cuota_saldos_tree.yview)
+        saldos_x = ttk.Scrollbar(saldos_table, orient="horizontal", command=self.cuota_saldos_tree.xview)
+        self.cuota_saldos_tree.configure(yscrollcommand=saldos_y.set, xscrollcommand=saldos_x.set)
+        self.cuota_saldos_tree.grid(row=0, column=0, sticky="nsew")
+        saldos_y.grid(row=0, column=1, sticky="ns")
+        saldos_x.grid(row=1, column=0, sticky="ew")
+        saldos_table.grid_rowconfigure(0, weight=1)
+        saldos_table.grid_columnconfigure(0, weight=1)
 
         cuotas_columns = ("id", "cliente", "producto", "bodega", "cuota_base", "saldo_anterior", "cuota", "unidad", "origen")
         cuotas_table_frame = tk.Frame(cuotas_panel, bg=self.colors["bg_card"])
