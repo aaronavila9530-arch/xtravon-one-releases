@@ -236,6 +236,7 @@ def show_centro_ejecutivo(self):
         "avance_pct": 100,
     }.items():
         self.centro_cuotas_tree.column(col, width=width)
+    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
     self.centro_alertas_tree = self.crear_tabla_centro(
         body,
         "Alertas operativas",
@@ -1162,6 +1163,8 @@ def render_control_operativo_centro(self, data):
     bodegas = data.get("bodegas", [])
     filtros_activos = data.get("filtros_activos", {}) or {}
     plan_viajes = data.get("plan_viajes", {}) or {}
+    self.centro_graficos_base = graficos
+    self.centro_bodegas_base = bodegas
     if not plan_viajes.get("mensaje"):
         promedio = self.safe_number(kpis.get("promedio_mt_camion"), 0)
         pendiente = self.safe_number(kpis.get("faltante_mt"), 0)
@@ -1202,6 +1205,41 @@ def render_control_operativo_centro(self, data):
     dibujar_buque_centro(self, bodegas)
     render_graficos_operativos_centro(self, graficos, filtros_activos)
     render_tablas_operativas_centro(self, cuotas, alertas)
+
+
+def params_centro_desde_filtro_tabla(self):
+    tree = getattr(self, "centro_cuotas_tree", None)
+    filters = getattr(tree, "_xtravon_excel_filters", {}) or {}
+    params = self.obtener_params_reporte_centro() if hasattr(self, "obtener_params_reporte_centro") else {}
+
+    def primer_valor(col):
+        values = [str(item or "").strip() for item in filters.get(col, set()) if str(item or "").strip()]
+        return sorted(values)[0] if values else ""
+
+    cliente = primer_valor("cliente")
+    producto = primer_valor("producto")
+    bodega = primer_valor("bodega")
+    if cliente:
+        params["empresa"] = cliente
+    if producto:
+        params["producto"] = producto
+    if bodega:
+        import re
+        match = re.search(r"\d+", bodega)
+        if match:
+            params["bodega_numero"] = match.group(0)
+    return params
+
+
+def actualizar_graficos_centro_desde_filtro_tabla(self, _visible_rows=None):
+    graficos = getattr(self, "centro_graficos_base", None)
+    if not isinstance(graficos, dict):
+        return
+    params = self.params_centro_desde_filtro_tabla()
+    graficos_filtrados = filtrar_graficos_centro_por_params(graficos, params)
+    bodegas = getattr(self, "centro_bodegas_base", [])
+    dibujar_buque_centro(self, filtrar_rows_centro_por_params(bodegas, params))
+    render_graficos_operativos_centro(self, graficos_filtrados, params)
 
 
 def actualizar_lectura_centro(self, texto, color=None):
