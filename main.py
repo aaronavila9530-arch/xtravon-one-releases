@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+import unicodedata
 import webbrowser
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from datetime import date, datetime
@@ -2491,6 +2492,15 @@ class ERPElSurcoApp(tk.Tk):
             raise RuntimeError(self.obtener_detalle_error(respuesta))
         return respuesta.json()
 
+    def api_get_clientes_cuotas_buque(self):
+        respuesta = requests.get(
+            f"{self.api_base}/operaciones-buque-cuotas/clientes",
+            timeout=60,
+        )
+        if respuesta.status_code != 200:
+            raise RuntimeError(self.obtener_detalle_error(respuesta))
+        return respuesta.json()
+
     def api_eliminar_cuota_buque(self, cuota_id):
         respuesta = requests.delete(
             f"{self.api_base}/operaciones-buque-cuotas/{cuota_id}",
@@ -3346,13 +3356,16 @@ class ERPElSurcoApp(tk.Tk):
             self.cuotas_tree.insert(
                 "",
                 "end",
-                values=(
+                values=self.valores_cuota_tree(
                     cuota.get("id", ""),
                     cuota.get("cliente", ""),
                     self.producto_cuota_visible(cuota.get("producto")),
                     self.bodega_cuota_visible(cuota.get("bodega_numeros") or cuota.get("bodega_numero")),
-                    self.formatear_numero(cuota.get("cuota"), 2),
+                    cuota.get("cuota"),
                     cuota.get("unidad", ""),
+                    saldo_anterior=0,
+                    cuota_final=cuota.get("cuota"),
+                    origen="DB",
                 ),
             )
 
@@ -5278,8 +5291,11 @@ class ERPElSurcoApp(tk.Tk):
         self.cuota_editing_item = None
         self.cuota_lineas_vars = []
         self.cuota_producto_combos = []
+        self.cuota_clientes_opciones = []
+        self.cuota_saldos_map = {}
         self.operaciones_tree = None
         self.cuotas_tree = None
+        self.cuota_saldos_tree = None
 
         self.create_page_title(
             self.content,
@@ -5407,11 +5423,16 @@ class ERPElSurcoApp(tk.Tk):
         cuota_grid = tk.Frame(cuota_form, bg=self.colors["bg_card"])
         cuota_grid.pack(fill="x")
 
-        for idx, (key, label) in enumerate([("cliente", "Cliente"), ("cuota", "Cuota")]):
-            box = tk.Frame(cuota_grid, bg=self.colors["bg_card"])
-            box.grid(row=0, column=0 if key == "cliente" else 3, sticky="ew", padx=5, pady=3)
-            tk.Label(box, text=label, font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
-            ttk.Entry(box, textvariable=self.cuota_form_vars[key]).pack(fill="x")
+        cliente_box = tk.Frame(cuota_grid, bg=self.colors["bg_card"])
+        cliente_box.grid(row=0, column=0, sticky="ew", padx=5, pady=3)
+        tk.Label(cliente_box, text="Cliente", font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
+        self.cuota_cliente_combo = ttk.Combobox(
+            cliente_box,
+            textvariable=self.cuota_form_vars["cliente"],
+            values=[],
+            state="normal",
+        )
+        self.cuota_cliente_combo.pack(fill="x")
 
         producto_cuota_box = tk.Frame(cuota_grid, bg=self.colors["bg_card"])
         producto_cuota_box.grid(row=0, column=1, sticky="ew", padx=5, pady=3)
@@ -5438,6 +5459,11 @@ class ERPElSurcoApp(tk.Tk):
             width=4,
         ).pack(side="left", padx=(4, 0))
 
+        cuota_box = tk.Frame(cuota_grid, bg=self.colors["bg_card"])
+        cuota_box.grid(row=0, column=3, sticky="ew", padx=5, pady=3)
+        tk.Label(cuota_box, text="Cuota base", font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
+        ttk.Entry(cuota_box, textvariable=self.cuota_form_vars["cuota"]).pack(fill="x")
+
         unidad_box = tk.Frame(cuota_grid, bg=self.colors["bg_card"])
         unidad_box.grid(row=0, column=4, sticky="ew", padx=5, pady=3)
         tk.Label(unidad_box, text="Unidad", font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
@@ -5458,12 +5484,45 @@ class ERPElSurcoApp(tk.Tk):
         ttk.Button(cuota_actions, text="Cargar cuotas activas", style="Gray.TButton", command=self.cargar_cuotas_operacion_activa).pack(side="left", padx=(0, 8))
         ttk.Button(cuota_actions, text="Proponer ultimo cierre", style="Gray.TButton", command=self.cargar_propuesta_cuotas_ultimo_cierre).pack(side="left")
 
-        cuotas_columns = ("id", "cliente", "producto", "bodega", "cuota", "unidad")
+        saldos_frame = tk.Frame(cuotas_panel, bg=self.colors["bg_card"])
+        saldos_frame.pack(fill="x", padx=14, pady=(0, 8))
+        tk.Label(
+            saldos_frame,
+            text="Saldos del ultimo buque cerrado (se restan o suman a la cuota base)",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_dark"],
+        ).pack(anchor="w", pady=(0, 4))
+        saldos_columns = ("cliente", "producto", "cuota_base", "retirado", "saldo", "ajustada")
+        self.cuota_saldos_tree = ttk.Treeview(saldos_frame, columns=saldos_columns, show="headings", height=4)
+        for col, heading, width in [
+            ("cliente", "Cliente", 240),
+            ("producto", "Producto", 130),
+            ("cuota_base", "Cuota anterior", 120),
+            ("retirado", "Retirado", 120),
+            ("saldo", "Saldo anterior", 120),
+            ("ajustada", "Cuota sugerida", 120),
+        ]:
+            self.cuota_saldos_tree.heading(col, text=heading)
+            self.cuota_saldos_tree.column(col, width=width, anchor="center")
+        self.cuota_saldos_tree.pack(fill="x")
+
+        cuotas_columns = ("id", "cliente", "producto", "bodega", "cuota_base", "saldo_anterior", "cuota", "unidad", "origen")
         cuotas_table_frame = tk.Frame(cuotas_panel, bg=self.colors["bg_card"])
         cuotas_table_frame.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
         self.cuotas_tree = ttk.Treeview(cuotas_table_frame, columns=cuotas_columns, show="headings", height=12)
-        for col, heading, width in [("id", "ID", 45), ("cliente", "Cliente", 230), ("producto", "Producto", 210), ("bodega", "Bodega", 110), ("cuota", "Cuota", 120), ("unidad", "Unidad", 90)]:
+        for col, heading, width in [
+            ("id", "ID", 70),
+            ("cliente", "Cliente", 220),
+            ("producto", "Producto", 150),
+            ("bodega", "Bodega", 110),
+            ("cuota_base", "Cuota base", 110),
+            ("saldo_anterior", "Saldo ant.", 110),
+            ("cuota", "Cuota final", 110),
+            ("unidad", "Unidad", 80),
+            ("origen", "Origen", 170),
+        ]:
             self.cuotas_tree.heading(col, text=heading)
             self.cuotas_tree.column(col, width=width, anchor="center")
 
@@ -5479,6 +5538,7 @@ class ERPElSurcoApp(tk.Tk):
         self.operacion_activa = None
         self.actualizar_operacion_activa_label()
         self.after(150, self.cargar_operaciones_cuota_combo)
+        self.after(250, self.cargar_clientes_cuota_opciones)
 
     def limpiar_form_operacion(self):
         for var in self.operacion_form_vars.values():
@@ -5506,6 +5566,7 @@ class ERPElSurcoApp(tk.Tk):
         if self.cuotas_tree is not None:
             for item in self.cuotas_tree.get_children():
                 self.cuotas_tree.delete(item)
+        self.cargar_saldos_cuotas_ultimo_cierre()
 
     def limpiar_form_cuota(self):
         if not hasattr(self, "cuota_form_vars"):
@@ -5590,6 +5651,7 @@ class ERPElSurcoApp(tk.Tk):
             if seleccionado in valores:
                 self.operacion_activa = self.cuota_operaciones_map.get(seleccionado)
                 self.actualizar_operacion_activa_label()
+                self.cargar_saldos_cuotas_ultimo_cierre()
                 return
 
             if isinstance(activa, dict):
@@ -5598,17 +5660,20 @@ class ERPElSurcoApp(tk.Tk):
                         self.cuota_form_vars["operacion"].set(etiqueta)
                         self.operacion_activa = op
                         self.actualizar_operacion_activa_label()
+                        self.cargar_saldos_cuotas_ultimo_cierre()
                         return
 
             if valores:
                 self.cuota_form_vars["operacion"].set(valores[0])
                 self.operacion_activa = self.cuota_operaciones_map.get(valores[0])
                 self.actualizar_operacion_activa_label()
+                self.cargar_saldos_cuotas_ultimo_cierre()
                 return
 
             self.cuota_form_vars["operacion"].set("")
             self.operacion_activa = None
             self.actualizar_operacion_activa_label()
+            self.registrar_saldos_cuotas({})
             if self.cuotas_tree is not None:
                 for item in self.cuotas_tree.get_children():
                     self.cuotas_tree.delete(item)
@@ -5685,6 +5750,124 @@ class ERPElSurcoApp(tk.Tk):
         if not actual or actual.upper() in ("CUOTA GENERAL", "SIN PRODUCTO", "TODOS", "ALL"):
             self.cuota_form_vars["producto"].set(productos[0])
 
+    def cargar_clientes_cuota_opciones(self):
+        if not hasattr(self, "cuota_cliente_combo"):
+            return
+
+        def tarea():
+            return self.api_get_clientes_cuotas_buque().get("data", [])
+
+        def al_terminar(clientes):
+            clientes = [str(cliente or "").strip() for cliente in clientes or [] if str(cliente or "").strip()]
+            self.cuota_clientes_opciones = clientes
+            if hasattr(self, "cuota_cliente_combo"):
+                self.cuota_cliente_combo["values"] = clientes
+            self.render_lineas_cuota_front()
+
+        self.ejecutar_en_segundo_plano(
+            "Clientes cuotas",
+            "Cargando clientes registrados...",
+            tarea,
+            al_terminar,
+        )
+
+    def normalizar_clave_cuota(self, valor):
+        texto = str(valor or "").strip().upper()
+        texto = unicodedata.normalize("NFKD", texto)
+        texto = "".join(ch for ch in texto if not unicodedata.combining(ch))
+        texto = "".join(ch if ch.isalnum() else " " for ch in texto)
+        return " ".join(texto.split())
+
+    def clave_saldo_cuota(self, cliente, producto):
+        return self.normalizar_clave_cuota(cliente), self.normalizar_clave_cuota(producto)
+
+    def registrar_saldos_cuotas(self, propuesta):
+        saldos = []
+        if isinstance(propuesta, dict):
+            saldos = propuesta.get("saldos") or propuesta.get("data") or []
+        self.cuota_saldos_map = {}
+        if hasattr(self, "cuota_saldos_tree") and self.cuota_saldos_tree is not None:
+            for item in self.cuota_saldos_tree.get_children():
+                self.cuota_saldos_tree.delete(item)
+
+        for saldo in saldos or []:
+            if not isinstance(saldo, dict):
+                continue
+            cliente = saldo.get("cliente", "")
+            producto = self.producto_cuota_visible(saldo.get("producto"))
+            saldo_anterior = self.safe_number(saldo.get("saldo_anterior"), 0)
+            cuota_base = self.safe_number(saldo.get("cuota_base"), 0)
+            retirado = self.safe_number(saldo.get("retirado_origen"), 0)
+            cuota_ajustada = self.safe_number(saldo.get("cuota_ajustada", saldo.get("cuota")), max(cuota_base - saldo_anterior, 0))
+            self.cuota_saldos_map[self.clave_saldo_cuota(cliente, producto)] = saldo_anterior
+            if hasattr(self, "cuota_saldos_tree") and self.cuota_saldos_tree is not None:
+                self.cuota_saldos_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        cliente,
+                        producto,
+                        self.formatear_numero(cuota_base, 2),
+                        self.formatear_numero(retirado, 2),
+                        self.formatear_numero(saldo_anterior, 2),
+                        self.formatear_numero(cuota_ajustada, 2),
+                    ),
+                )
+
+    def cargar_saldos_cuotas_ultimo_cierre(self):
+        operacion_id = self.obtener_operacion_cuota_id()
+        if not operacion_id:
+            self.registrar_saldos_cuotas({})
+            return
+
+        def tarea():
+            return self.api_get_cuotas_propuesta_buque(operacion_id)
+
+        def al_terminar(propuesta):
+            self.registrar_saldos_cuotas(propuesta)
+
+        def tarea_segura():
+            try:
+                return {"ok": True, "data": tarea()}
+            except Exception as exc:
+                return {"ok": False, "error": exc}
+
+        def finalizar(resultado):
+            if resultado.get("ok"):
+                al_terminar(resultado.get("data"))
+            else:
+                self.registrar_saldos_cuotas({})
+
+        self.ejecutar_en_segundo_plano(
+            "Saldos cuotas",
+            "Leyendo saldos del ultimo cierre...",
+            tarea_segura,
+            finalizar,
+        )
+
+    def obtener_saldo_anterior_cuota(self, cliente, producto):
+        return self.safe_number(getattr(self, "cuota_saldos_map", {}).get(self.clave_saldo_cuota(cliente, producto)), 0)
+
+    def valores_cuota_tree(self, cuota_id, cliente, producto, bodega, cuota_base, unidad="MT", saldo_anterior=None, cuota_final=None, origen=""):
+        cuota_base = self.safe_number(cuota_base, 0)
+        if saldo_anterior is None:
+            saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+        saldo_anterior = self.safe_number(saldo_anterior, 0)
+        if cuota_final is None:
+            cuota_final = max(cuota_base - saldo_anterior, 0)
+        cuota_final = self.safe_number(cuota_final, 0)
+        return (
+            cuota_id,
+            cliente,
+            self.producto_cuota_visible(producto),
+            bodega or "Todas",
+            self.formatear_numero(cuota_base, 2),
+            self.formatear_numero(saldo_anterior, 2),
+            self.formatear_numero(cuota_final, 2),
+            unidad or "MT",
+            origen or "",
+        )
+
     def cargar_cuotas_tabla_operacion_id(self, operacion_id):
         if self.cuotas_tree is None or not operacion_id:
             return []
@@ -5699,13 +5882,16 @@ class ERPElSurcoApp(tk.Tk):
             self.cuotas_tree.insert(
                 "",
                 "end",
-                values=(
+                values=self.valores_cuota_tree(
                     cuota.get("id", ""),
                     cuota.get("cliente", ""),
                     self.producto_cuota_visible(cuota.get("producto")),
                     self.bodega_cuota_visible(cuota.get("bodega_numeros") or cuota.get("bodega_numero")),
-                    self.formatear_numero(cuota.get("cuota"), 2),
+                    cuota.get("cuota"),
                     cuota.get("unidad", ""),
+                    saldo_anterior=0,
+                    cuota_final=cuota.get("cuota"),
+                    origen="DB",
                 ),
             )
 
@@ -5793,13 +5979,16 @@ class ERPElSurcoApp(tk.Tk):
                     self.cuotas_tree.insert(
                         "",
                         "end",
-                        values=(
+                        values=self.valores_cuota_tree(
                             cuota.get("id", ""),
                             cuota.get("cliente", ""),
                             self.producto_cuota_visible(cuota.get("producto")),
                             self.bodega_cuota_visible(cuota.get("bodega_numeros") or cuota.get("bodega_numero")),
-                            self.formatear_numero(cuota.get("cuota"), 2),
+                            cuota.get("cuota"),
                             cuota.get("unidad", ""),
+                            saldo_anterior=0,
+                            cuota_final=cuota.get("cuota"),
+                            origen="DB",
                         ),
                     )
             if not cuotas:
@@ -5832,6 +6021,7 @@ class ERPElSurcoApp(tk.Tk):
             self.operacion_activa = detalle.get("operacion") or self.operacion_activa
             self.actualizar_operacion_activa_label()
             self.actualizar_productos_cuota_desde_operacion(detalle)
+            self.registrar_saldos_cuotas(propuesta)
 
             cuotas = propuesta.get("data", []) if isinstance(propuesta, dict) else []
             if self.cuotas_tree is not None:
@@ -5841,13 +6031,16 @@ class ERPElSurcoApp(tk.Tk):
                     self.cuotas_tree.insert(
                         "",
                         "end",
-                        values=(
+                        values=self.valores_cuota_tree(
                             "PENDIENTE",
                             cuota.get("cliente", ""),
                             self.producto_cuota_visible(cuota.get("producto")),
                             self.bodega_cuota_visible(cuota.get("bodega_numeros") or cuota.get("bodega_numero")),
-                            self.formatear_numero(cuota.get("cuota"), 3),
+                            cuota.get("cuota_base", cuota.get("cuota")),
                             cuota.get("unidad", "MT"),
+                            saldo_anterior=cuota.get("saldo_anterior", 0),
+                            cuota_final=cuota.get("cuota_ajustada", cuota.get("cuota")),
+                            origen=cuota.get("origen", "PROPUESTA"),
                         ),
                     )
 
@@ -5887,7 +6080,7 @@ class ERPElSurcoApp(tk.Tk):
             self.cuota_form_vars["cliente"].set(cliente)
             self.cuota_form_vars["producto"].set(producto)
             self.cuota_form_vars["bodega"].set(bodega or "Todas")
-            self.cuota_form_vars["cuota"].set(str(cuota).replace(",", ""))
+            self.cuota_form_vars["cuota"].set(str(self.cuota_base_desde_valores_tree(valores) or cuota).replace(",", ""))
             self.cuota_form_vars["unidad"].set(unidad or "MT")
             messagebox.showinfo("Editar cuota", "Modifique los campos y presione + para guardar los cambios.")
 
@@ -5961,6 +6154,8 @@ class ERPElSurcoApp(tk.Tk):
 
     def normalizar_valores_cuota_tree(self, valores):
         valores = list(valores or [])
+        if len(valores) >= 9:
+            return valores[0], valores[1], valores[2], valores[3], valores[6], valores[7]
         if len(valores) >= 6:
             return valores[0], valores[1], valores[2], valores[3], valores[4], valores[5]
         if len(valores) >= 5:
@@ -5968,6 +6163,14 @@ class ERPElSurcoApp(tk.Tk):
         if len(valores) >= 4:
             return valores[0], valores[1], "", "Todas", valores[2], valores[3]
         return "", "", "", "Todas", "", "MT"
+
+    def cuota_base_desde_valores_tree(self, valores):
+        valores = list(valores or [])
+        if len(valores) >= 9:
+            return valores[4]
+        if len(valores) >= 6:
+            return valores[4]
+        return ""
 
     def bodega_cuota_visible(self, bodega_numero):
         bodegas = self.bodega_cuota_payload(bodega_numero)
@@ -6082,10 +6285,11 @@ class ERPElSurcoApp(tk.Tk):
 
         self.cuota_producto_combos = []
         productos = self.productos_operacion_actuales()
+        clientes = getattr(self, "cuota_clientes_opciones", [])
         for item in self.cuota_lineas_vars:
             row = tk.Frame(self.cuota_lineas_frame, bg=self.colors["bg_card"])
             row.pack(fill="x", pady=3)
-            ttk.Entry(row, textvariable=item["cliente"]).grid(row=0, column=0, sticky="ew", padx=5)
+            ttk.Combobox(row, textvariable=item["cliente"], values=clientes, state="normal").grid(row=0, column=0, sticky="ew", padx=5)
             producto_combo = ttk.Combobox(row, textvariable=item["producto"], values=productos, state="readonly")
             producto_combo.grid(row=0, column=1, sticky="ew", padx=5)
             self.cuota_producto_combos.append(producto_combo)
@@ -6136,6 +6340,8 @@ class ERPElSurcoApp(tk.Tk):
                 valores = self.cuotas_tree.item(item, "values")
                 cuota_id = valores[0] if valores else "PENDIENTE"
                 cuota_id_num = self.safe_int(cuota_id, None)
+                saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+                cuota_final = max(cuota_num - saldo_anterior, 0)
                 if operacion_id and cuota_id_num:
                     try:
                         payload_bodega = self.bodega_cuota_payload_api(bodega_numero)
@@ -6143,9 +6349,9 @@ class ERPElSurcoApp(tk.Tk):
                             "cliente": cliente,
                             "producto": producto,
                             **payload_bodega,
-                            "cuota": cuota_num,
+                            "cuota": cuota_final,
                             "unidad": unidad,
-                            "observaciones": None,
+                            "observaciones": f"Cuota base {cuota_num:.3f} MT; saldo anterior {saldo_anterior:.3f} MT; cuota final {cuota_final:.3f} MT.",
                         })
                         self.cargar_cuotas_tabla_operacion_id(operacion_id)
                         self.cuota_editing_item = None
@@ -6155,7 +6361,20 @@ class ERPElSurcoApp(tk.Tk):
                     except Exception as exc:
                         messagebox.showerror("Error actualizando cuota", str(exc))
                         return
-                self.cuotas_tree.item(item, values=(cuota_id or "PENDIENTE", cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                self.cuotas_tree.item(
+                    item,
+                    values=self.valores_cuota_tree(
+                        cuota_id or "PENDIENTE",
+                        cliente,
+                        producto,
+                        self.bodega_cuota_visible(bodega_numero),
+                        cuota_num,
+                        unidad,
+                        saldo_anterior=saldo_anterior,
+                        cuota_final=cuota_final,
+                        origen="MANUAL",
+                    ),
+                )
                 self.cuotas_tree.selection_set(item)
                 self.cuotas_tree.focus(item)
                 self.cuotas_tree.see(item)
@@ -6172,7 +6391,15 @@ class ERPElSurcoApp(tk.Tk):
                 self.cuotas_tree.insert(
                     "",
                     "end",
-                    values=("PENDIENTE", cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad),
+                    values=self.valores_cuota_tree(
+                        "PENDIENTE",
+                        cliente,
+                        producto,
+                        self.bodega_cuota_visible(bodega_numero),
+                        cuota_num,
+                        unidad,
+                        origen="MANUAL",
+                    ),
                 )
             else:
                 self.agregar_linea_cuota_front(cliente, producto, self.formatear_numero(cuota_num, 2), unidad, self.bodega_cuota_visible(bodega_numero))
@@ -6201,7 +6428,9 @@ class ERPElSurcoApp(tk.Tk):
             datos = self.obtener_datos_cuota_form()
             if not datos:
                 return
-            filas.append(datos)
+            cliente, producto, bodega_numero, cuota_base, unidad = datos
+            saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+            filas.append((cliente, producto, bodega_numero, max(cuota_base - saldo_anterior, 0), unidad))
 
         for item in getattr(self, "cuota_lineas_vars", []):
             cliente = item["cliente"].get().strip()
@@ -6210,7 +6439,8 @@ class ERPElSurcoApp(tk.Tk):
             cuota = self.safe_number(item["cuota"].get().strip(), 0)
             unidad = item["unidad"].get().strip() or "MT"
             if cliente and producto and cuota > 0:
-                filas.append((cliente, producto, bodega_numero, cuota, unidad))
+                saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+                filas.append((cliente, producto, bodega_numero, max(cuota - saldo_anterior, 0), unidad))
 
         if not filas and self.cuotas_tree is not None:
             for item in self.cuotas_tree.get_children():
@@ -6285,6 +6515,8 @@ class ERPElSurcoApp(tk.Tk):
         if not datos:
             return
         cliente, producto, bodega_numero, cuota_num, unidad = datos
+        saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+        cuota_final = max(cuota_num - saldo_anterior, 0)
 
         # En apertura de operacion la cuota vive localmente hasta presionar Abrir operacion.
         if self.operaciones_tree is None:
@@ -6296,9 +6528,9 @@ class ERPElSurcoApp(tk.Tk):
                     "cliente": cliente,
                     "producto": producto,
                     **payload_bodega,
-                    "cuota": cuota_num,
+                    "cuota": cuota_final,
                     "unidad": unidad,
-                    "observaciones": None,
+                    "observaciones": f"Cuota base {cuota_num:.3f} MT; saldo anterior {saldo_anterior:.3f} MT; cuota final {cuota_final:.3f} MT.",
                 }
                 try:
                     data = self.api_crear_cuota_buque(payload)
@@ -6307,10 +6539,10 @@ class ERPElSurcoApp(tk.Tk):
                         valores = self.cuotas_tree.item(item, "values")
                         _id, cliente_actual, producto_actual, bodega_actual, _cuota, _unidad = self.normalizar_valores_cuota_tree(valores)
                         if cliente_actual.strip().lower() == cliente.lower() and producto_actual.strip().lower() == producto.lower() and self.bodega_cuota_payload(bodega_actual) == bodega_numero:
-                            self.cuotas_tree.item(item, values=(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                            self.cuotas_tree.item(item, values=self.valores_cuota_tree(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="DB"))
                             self.limpiar_form_cuota()
                             return
-                    self.cuotas_tree.insert("", "end", values=(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                    self.cuotas_tree.insert("", "end", values=self.valores_cuota_tree(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="DB"))
                     self.limpiar_form_cuota()
                     return
                 except Exception as e:
@@ -6331,9 +6563,9 @@ class ERPElSurcoApp(tk.Tk):
                     "cliente": cliente,
                     "producto": producto,
                     **payload_bodega,
-                    "cuota": cuota_num,
+                    "cuota": cuota_final,
                     "unidad": unidad,
-                    "observaciones": None,
+                    "observaciones": f"Cuota base {cuota_num:.3f} MT; saldo anterior {saldo_anterior:.3f} MT; cuota final {cuota_final:.3f} MT.",
                 }
                 try:
                     data = self.api_crear_cuota_buque(payload)
@@ -6342,10 +6574,10 @@ class ERPElSurcoApp(tk.Tk):
                         valores = self.cuotas_tree.item(item, "values")
                         _id, cliente_actual, producto_actual, bodega_actual, _cuota, _unidad = self.normalizar_valores_cuota_tree(valores)
                         if cliente_actual.strip().lower() == cliente.lower() and producto_actual.strip().lower() == producto.lower() and self.bodega_cuota_payload(bodega_actual) == bodega_numero:
-                            self.cuotas_tree.item(item, values=(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                            self.cuotas_tree.item(item, values=self.valores_cuota_tree(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="DB"))
                             self.limpiar_form_cuota()
                             return
-                    self.cuotas_tree.insert("", "end", values=(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                    self.cuotas_tree.insert("", "end", values=self.valores_cuota_tree(cuota_id, cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="DB"))
                     self.limpiar_form_cuota()
                     return
                 except Exception as e:
@@ -6356,11 +6588,11 @@ class ERPElSurcoApp(tk.Tk):
                 valores = self.cuotas_tree.item(item, "values")
                 _id, cliente_actual, producto_actual, bodega_actual, _cuota, _unidad = self.normalizar_valores_cuota_tree(valores)
                 if cliente_actual.strip().lower() == cliente.lower() and producto_actual.strip().lower() == producto.lower() and self.bodega_cuota_payload(bodega_actual) == bodega_numero:
-                    self.cuotas_tree.item(item, values=("", cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+                    self.cuotas_tree.item(item, values=self.valores_cuota_tree("", cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"))
                     self.limpiar_form_cuota()
                     return
 
-            self.cuotas_tree.insert("", "end", values=("", cliente, producto, self.bodega_cuota_visible(bodega_numero), self.formatear_numero(cuota_num, 2), unidad))
+            self.cuotas_tree.insert("", "end", values=self.valores_cuota_tree("", cliente, producto, self.bodega_cuota_visible(bodega_numero), cuota_num, unidad, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"))
             self.limpiar_form_cuota()
             return
 
@@ -6375,9 +6607,9 @@ class ERPElSurcoApp(tk.Tk):
             "cliente": cliente,
             "producto": producto,
             **payload_bodega,
-            "cuota": cuota_num,
+            "cuota": cuota_final,
             "unidad": unidad,
-            "observaciones": None,
+            "observaciones": f"Cuota base {cuota_num:.3f} MT; saldo anterior {saldo_anterior:.3f} MT; cuota final {cuota_final:.3f} MT.",
         }
 
         try:
@@ -6474,6 +6706,8 @@ class ERPElSurcoApp(tk.Tk):
             if cuota_num is None or cuota_num <= 0:
                 messagebox.showwarning("Cuota invalida", "La cuota debe ser mayor a cero.")
                 return
+            saldo_anterior = self.obtener_saldo_anterior_cuota(cliente_pendiente, producto_pendiente)
+            cuota_final = max(cuota_num - saldo_anterior, 0)
 
             existe_cliente = False
             if self.cuotas_tree is not None:
@@ -6485,7 +6719,7 @@ class ERPElSurcoApp(tk.Tk):
                         and producto_actual.strip().lower() == producto_pendiente.lower()
                         and self.bodega_cuota_payload(bodega_actual) == self.bodega_cuota_payload(bodega_pendiente)
                     ):
-                        self.cuotas_tree.item(item, values=("", cliente_pendiente, producto_pendiente, bodega_pendiente, self.formatear_numero(cuota_num, 2), unidad_pendiente))
+                        self.cuotas_tree.item(item, values=self.valores_cuota_tree("", cliente_pendiente, producto_pendiente, bodega_pendiente, cuota_num, unidad_pendiente, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"))
                         existe_cliente = True
                         break
 
@@ -6493,7 +6727,7 @@ class ERPElSurcoApp(tk.Tk):
                     self.cuotas_tree.insert(
                         "",
                         "end",
-                        values=("", cliente_pendiente, producto_pendiente, bodega_pendiente, self.formatear_numero(cuota_num, 2), unidad_pendiente),
+                        values=self.valores_cuota_tree("", cliente_pendiente, producto_pendiente, bodega_pendiente, cuota_num, unidad_pendiente, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"),
                     )
 
                 self.limpiar_form_cuota()
