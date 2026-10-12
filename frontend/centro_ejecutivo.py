@@ -7,6 +7,7 @@ def install_centro_ejecutivo_screen(app_class):
     app_class.show_centro_ejecutivo = show_centro_ejecutivo
     app_class.cargar_centro_ejecutivo = cargar_centro_ejecutivo
     app_class.cargar_operaciones_centro = cargar_operaciones_centro
+    app_class.cerrar_operacion_centro = cerrar_operacion_centro
     app_class.seleccionar_operacion_centro_por_id = seleccionar_operacion_centro_por_id
     app_class.seleccionar_operacion_relevante_centro = seleccionar_operacion_relevante_centro
     app_class.refrescar_operacion_centro_por_seleccion = refrescar_operacion_centro_por_seleccion
@@ -104,6 +105,7 @@ def show_centro_ejecutivo(self):
     top_actions.pack(fill="x", padx=12, pady=(10, 6))
     ttk.Button(top_actions, text="Buscar operacion", style="Olive.TButton", command=self.cargar_operaciones_centro).pack(side="left", padx=(0, 8))
     ttk.Button(top_actions, text="Generar datos", style="Gray.TButton", command=self.analizar_operacion_centro).pack(side="left", padx=(0, 8))
+    ttk.Button(top_actions, text="Cerrar operacion", style="Gray.TButton", command=self.cerrar_operacion_centro).pack(side="left", padx=(0, 8))
 
     filters = tk.Frame(actions, bg=self.colors["bg_card"])
     filters.pack(fill="x", padx=12, pady=(0, 8))
@@ -309,6 +311,45 @@ def cargar_operaciones_centro(self):
     self.ejecutar_en_segundo_plano(
         "Centro Ejecutivo",
         "Buscando operaciones. Por favor espere...",
+        tarea,
+        al_terminar,
+    )
+
+
+def cerrar_operacion_centro(self):
+    operacion_id = self.obtener_operacion_centro_seleccionada()
+    if not operacion_id:
+        return
+
+    nombre = ""
+    estado = ""
+    if self.centro_operaciones_tree:
+        seleccion = self.centro_operaciones_tree.selection()
+        if seleccion:
+            valores = self.centro_operaciones_tree.item(seleccion[0], "values")
+            if len(valores) >= 5:
+                nombre = valores[1]
+                estado = valores[4]
+
+    if str(estado or "").upper() == "CERRADA":
+        messagebox.showinfo("Operacion cerrada", "La operacion seleccionada ya esta cerrada.")
+        return
+
+    mensaje = f"Desea cerrar la operacion {nombre or operacion_id}?"
+    if not messagebox.askyesno("Cerrar operacion", mensaje):
+        return
+
+    def tarea():
+        return self.api_cerrar_operacion_buque(operacion_id)
+
+    def al_terminar(resultado):
+        self.centro_estado_var.set(resultado.get("message", "Operacion cerrada correctamente."))
+        messagebox.showinfo("Operacion cerrada", resultado.get("message", "Operacion cerrada correctamente."))
+        self.cargar_operaciones_centro()
+
+    self.ejecutar_en_segundo_plano(
+        "Cerrar operacion",
+        "Cerrando operacion seleccionada...",
         tarea,
         al_terminar,
     )

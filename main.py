@@ -2118,6 +2118,15 @@ class ERPElSurcoApp(tk.Tk):
         try:
             if value is None or value == "":
                 return default
+            if isinstance(value, str):
+                value = value.strip()
+                if "," in value and "." in value:
+                    if value.rfind(",") > value.rfind("."):
+                        value = value.replace(".", "").replace(",", ".")
+                    else:
+                        value = value.replace(",", "")
+                elif "," in value:
+                    value = value.replace(",", ".")
             return float(value)
         except (TypeError, ValueError):
             return default
@@ -5287,6 +5296,11 @@ class ERPElSurcoApp(tk.Tk):
             "cuota": tk.StringVar(),
             "unidad": tk.StringVar(value="MT"),
         }
+        self.cuota_preview_vars = {
+            "cuota_base": tk.StringVar(value="0.00"),
+            "saldo_anterior": tk.StringVar(value="0.00"),
+            "cuota_final": tk.StringVar(value="0.00"),
+        }
         self.cuota_operaciones_map = {}
         self.cuota_editing_item = None
         self.cuota_lineas_vars = []
@@ -5472,6 +5486,27 @@ class ERPElSurcoApp(tk.Tk):
         for col in range(5):
             cuota_grid.grid_columnconfigure(col, weight=1)
 
+        cuota_preview = tk.Frame(cuota_form, bg=self.colors["bg_card"])
+        cuota_preview.pack(fill="x", pady=(6, 0))
+        for idx, (key, label) in enumerate([
+            ("cuota_base", "Cuota anterior/base"),
+            ("saldo_anterior", "Saldo anterior"),
+            ("cuota_final", "Nueva cuota final"),
+        ]):
+            box = tk.Frame(cuota_preview, bg=self.colors["bg_card"])
+            box.grid(row=0, column=idx, sticky="ew", padx=5)
+            tk.Label(box, text=label, font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_secondary"]).pack(anchor="w")
+            tk.Label(
+                box,
+                textvariable=self.cuota_preview_vars[key],
+                font=("Segoe UI", 13, "bold"),
+                bg=self.colors["bg_card"],
+                fg=self.colors["accent"] if key == "cuota_final" else self.colors["text_dark"],
+            ).pack(anchor="w")
+            cuota_preview.grid_columnconfigure(idx, weight=1)
+        for key in ("cliente", "producto", "cuota"):
+            self.cuota_form_vars[key].trace_add("write", lambda *_args: self.actualizar_preview_cuota())
+
         self.cuota_lineas_frame = tk.Frame(cuotas_panel, bg=self.colors["bg_card"])
         self.cuota_lineas_frame.pack(fill="x", padx=14, pady=(0, 8))
 
@@ -5630,6 +5665,7 @@ class ERPElSurcoApp(tk.Tk):
                     operaciones.insert(0, activa)
             operaciones_map = {}
             valores = []
+            vistos_ids = set()
 
             for op in operaciones:
                 if not isinstance(op, dict):
@@ -5637,6 +5673,10 @@ class ERPElSurcoApp(tk.Tk):
                 op_id = op.get("id")
                 if not op_id:
                     continue
+                op_id_key = self.safe_int(op_id, None)
+                if op_id_key in vistos_ids:
+                    continue
+                vistos_ids.add(op_id_key)
                 etiqueta = (
                     f"{op_id} | {op.get('nombre_buque', '')} | "
                     f"{self.fecha_larga_es(op.get('fecha_inicio'))} | {op.get('estado', '')}"
@@ -5750,6 +5790,18 @@ class ERPElSurcoApp(tk.Tk):
         if not actual or actual.upper() in ("CUOTA GENERAL", "SIN PRODUCTO", "TODOS", "ALL"):
             self.cuota_form_vars["producto"].set(productos[0])
 
+    def actualizar_preview_cuota(self):
+        if not hasattr(self, "cuota_preview_vars") or not hasattr(self, "cuota_form_vars"):
+            return
+        cliente = self.cuota_form_vars["cliente"].get().strip()
+        producto = self.cuota_form_vars["producto"].get().strip()
+        cuota_base = self.safe_number(self.cuota_form_vars["cuota"].get().strip(), 0)
+        saldo_anterior = self.obtener_saldo_anterior_cuota(cliente, producto)
+        cuota_final = max(cuota_base - saldo_anterior, 0)
+        self.cuota_preview_vars["cuota_base"].set(self.formatear_numero(cuota_base, 2))
+        self.cuota_preview_vars["saldo_anterior"].set(self.formatear_numero(saldo_anterior, 2))
+        self.cuota_preview_vars["cuota_final"].set(self.formatear_numero(cuota_final, 2))
+
     def cargar_clientes_cuota_opciones(self):
         if not hasattr(self, "cuota_cliente_combo"):
             return
@@ -5813,6 +5865,7 @@ class ERPElSurcoApp(tk.Tk):
                         self.formatear_numero(cuota_ajustada, 2),
                     ),
                 )
+        self.actualizar_preview_cuota()
 
     def cargar_saldos_cuotas_ultimo_cierre(self):
         operacion_id = self.obtener_operacion_cuota_id()
@@ -6734,19 +6787,27 @@ class ERPElSurcoApp(tk.Tk):
 
         cuotas = []
         if self.cuotas_tree is not None:
+            cuotas_por_clave = {}
             for item in self.cuotas_tree.get_children():
                 valores = self.cuotas_tree.item(item, "values")
                 cuota_id, cliente, producto, bodega, cuota_valor, unidad = self.normalizar_valores_cuota_tree(valores)
                 cuota_num = self.safe_number(str(cuota_valor).replace(",", ""), 0)
                 if cliente and producto and cuota_num > 0:
                     payload_bodega = self.bodega_cuota_payload_api(bodega)
-                    cuotas.append({
+                    cuota_payload = {
                         "cliente": cliente,
                         "producto": producto,
                         **payload_bodega,
                         "cuota": cuota_num,
                         "unidad": unidad,
-                    })
+                    }
+                    clave = (
+                        self.normalizar_clave_cuota(cliente),
+                        self.normalizar_clave_cuota(producto),
+                        tuple(payload_bodega.get("bodega_numeros") or []),
+                    )
+                    cuotas_por_clave[clave] = cuota_payload
+            cuotas = list(cuotas_por_clave.values())
 
         bodegas = []
         for numero in range(1, 6):
@@ -6799,6 +6860,7 @@ class ERPElSurcoApp(tk.Tk):
                 self.cuota_operaciones_map = {etiqueta: operacion}
                 self.cuota_operacion_combo["values"] = [etiqueta]
                 self.cuota_form_vars["operacion"].set(etiqueta)
+                self.after(250, self.cargar_operaciones_cuota_combo)
             messagebox.showinfo("Operacion creada", f"Operacion abierta para {operacion.get('nombre_buque', nombre_buque)}")
         except Exception as e:
             messagebox.showerror("Error creando operacion", str(e))
