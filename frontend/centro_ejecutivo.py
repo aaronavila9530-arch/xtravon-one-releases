@@ -1323,37 +1323,161 @@ def crear_excel_centro_desde_tabla_filtrada(self, ruta):
     if tree is None:
         raise RuntimeError("No hay tabla de cuotas visible para exportar.")
 
-    columns = list(getattr(tree, "_xtravon_excel_columns", []) or tree["columns"])
-    headings = []
-    for col in columns:
-        try:
-            headings.append(str(tree.heading(col, "text") or col).replace(" *", ""))
-        except Exception:
-            headings.append(str(col))
+    data = getattr(self, "centro_reporte_data", {}) or {}
+    operacion = data.get("operacion", {}) if isinstance(data, dict) else {}
+    kpis = data.get("kpis", {}) if isinstance(data, dict) else {}
+    alertas = data.get("alertas", []) if isinstance(data, dict) else []
+    cuotas_rows = filas_cuotas_desde_visible_centro(self)
+
+    params = self.params_centro_desde_filtro_tabla()
+    params.update(self.params_centro_desde_rows_tabla(None))
+    graficos_base = getattr(self, "centro_graficos_base", {}) or {}
+    graficos = filtrar_graficos_centro_por_params(graficos_base, params)
+    graficos_tabla = graficos_desde_cuotas_visibles_centro(self)
+    if graficos_tabla:
+        graficos = {**graficos, **graficos_tabla}
+
+    total_cuota_real = sum(self.safe_number(row.get("cuota_real_mt"), 0) for row in cuotas_rows)
+    total_saldo_anterior = sum(self.safe_number(row.get("saldo_anterior_mt"), 0) for row in cuotas_rows)
+    total_nueva_cuota = sum(self.safe_number(row.get("nueva_cuota_mt"), 0) for row in cuotas_rows)
+    total_descargado = sum(self.safe_number(row.get("retirado_mt"), 0) for row in cuotas_rows)
+    total_pendiente = sum(self.safe_number(row.get("pendiente_mt"), 0) for row in cuotas_rows)
+    total_guias = sum(self.safe_number(row.get("guias"), 0) for row in cuotas_rows)
+    avance_filtrado = (total_descargado / total_nueva_cuota * 100) if total_nueva_cuota else 0
 
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Cuota vs descargado"
-    ws.append(["Cuota vs descargado real - filas filtradas"])
-    ws.append(headings)
-    for cell in ws[1]:
-        cell.font = Font(bold=True, size=13)
     header_fill = PatternFill("solid", fgColor="6F775F")
-    for cell in ws[2]:
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = header_fill
+    used_names = set()
 
-    for item_id in tree.get_children(""):
-        values = list(tree.item(item_id, "values") or [])
-        ws.append([_valor_excel_centro(values[idx] if idx < len(values) else "") for idx, _col in enumerate(columns)])
+    def sheet_name(title):
+        clean = "".join(ch for ch in str(title or "Hoja") if ch not in r'[]:*?/\\').strip()[:31] or "Hoja"
+        candidate = clean
+        idx = 2
+        while candidate in used_names:
+            suffix = f" {idx}"
+            candidate = f"{clean[:31 - len(suffix)]}{suffix}"
+            idx += 1
+        used_names.add(candidate)
+        return candidate
 
-    for col_idx, _heading in enumerate(headings, start=1):
-        letter = get_column_letter(col_idx)
-        max_len = 12
-        for cell in ws[letter]:
-            max_len = max(max_len, len(str(cell.value or "")))
-        ws.column_dimensions[letter].width = min(max_len + 2, 42)
-    ws.freeze_panes = "A3"
+    def add_sheet(title, headers, rows):
+        ws = wb.create_sheet(sheet_name(title))
+        ws.append([title])
+        ws.append(headers)
+        for cell in ws[1]:
+            cell.font = Font(bold=True, size=13)
+        for cell in ws[2]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = header_fill
+        for row in rows or []:
+            ws.append([_valor_excel_centro(value) for value in row])
+        for col_idx, _heading in enumerate(headers, start=1):
+            letter = get_column_letter(col_idx)
+            max_len = 12
+            for cell in ws[letter]:
+                max_len = max(max_len, len(str(cell.value or "")))
+            ws.column_dimensions[letter].width = min(max_len + 2, 46)
+        ws.freeze_panes = "A3"
+        return ws
+
+    wb.remove(wb.active)
+    add_sheet(
+        "Resumen ejecutivo",
+        ["Indicador", "Valor"],
+        [
+            ["Buque", operacion.get("nombre_buque", "")],
+            ["Estado", operacion.get("estado", "")],
+            ["Filtro aplicado", ", ".join(f"{key}: {value}" for key, value in params.items() if value) or "Tabla filtrada"],
+            ["Clientes visibles", len({row.get("cliente") for row in cuotas_rows if row.get("cliente")})],
+            ["Productos visibles", " / ".join(sorted({str(row.get("producto")) for row in cuotas_rows if row.get("producto")}))],
+            ["Cuota real MT", total_cuota_real],
+            ["Saldo anterior MT", total_saldo_anterior],
+            ["Nueva cuota MT", total_nueva_cuota],
+            ["Descargado MT", total_descargado],
+            ["Pendiente/Sobredescarga MT", total_pendiente],
+            ["Avance %", avance_filtrado],
+            ["Guias visibles", total_guias],
+        ],
+    )
+    add_sheet(
+        "KPIs operativos",
+        ["Indicador", "Valor original"],
+        [
+            ["Guias", kpis.get("total_guias", 0)],
+            ["Completas", kpis.get("completas", 0)],
+            ["Pendientes", kpis.get("pendientes", 0)],
+            ["Capacidad MT", kpis.get("capacidad_mt", 0)],
+            ["Descargado MT", self.valor_descargado_visible_centro(kpis)],
+            ["Pendiente MT", kpis.get("faltante_mt", 0)],
+            ["Avance %", kpis.get("avance_descarga_pct", 0)],
+            ["Duracion prom. min", kpis.get("duracion_promedio_min", 0)],
+            ["MT camion", kpis.get("promedio_mt_camion", 0)],
+            ["Viajes sugeridos", kpis.get("viajes_estimados_necesarios", 0)],
+        ],
+    )
+    add_sheet(
+        "Cuota vs descargado",
+        ["Cliente", "Producto", "Bodega", "Cuota real", "Saldo anterior", "Nueva cuota", "Descargado", "Pendiente", "Avance %", "Guias"],
+        [
+            [
+                row.get("cliente"),
+                row.get("producto"),
+                row.get("bodega"),
+                row.get("cuota_real_mt"),
+                row.get("saldo_anterior_mt"),
+                row.get("nueva_cuota_mt"),
+                row.get("retirado_mt"),
+                row.get("pendiente_mt"),
+                row.get("avance_pct"),
+                row.get("guias"),
+            ]
+            for row in cuotas_rows
+        ],
+    )
+    add_sheet(
+        "Descarga por bodega",
+        ["Bodega", "Producto", "Capacidad/Cuota MT", "Descargado MT", "Pendiente MT", "Avance %", "Guias"],
+        [
+            [row.get("bodega") or row.get("bodega_numero"), row.get("producto"), row.get("capacidad_mt", row.get("cuota_mt")), row.get("retirado_mt"), row.get("faltante_mt"), row.get("avance_pct"), row.get("guias")]
+            for row in graficos.get("avance_bodegas_detalle", graficos.get("avance_bodegas", [])) or []
+        ],
+    )
+    add_sheet(
+        "Resumen por producto",
+        ["Producto", "Guias", "Descargado MT", "Cuota MT", "Pendiente MT", "Avance %"],
+        [
+            [row.get("producto"), row.get("guias"), row.get("retirado_mt"), row.get("cuota_mt"), row.get("faltante_mt", row.get("saldo_mt")), row.get("avance_pct")]
+            for row in graficos.get("retiro_por_producto", []) or []
+        ],
+    )
+    add_sheet(
+        "Estado descarga",
+        ["Estado", "Valor"],
+        [[row.get("estado"), row.get("valor")] for row in graficos.get("estado_descarga", []) or []],
+    )
+    add_sheet(
+        "Estado guias",
+        ["Estado", "Valor"],
+        [[row.get("estado"), row.get("valor")] for row in graficos.get("estado_guias", []) or []],
+    )
+    add_sheet(
+        "Tendencia diaria",
+        ["Fecha", "Guias", "Descargado MT"],
+        [[row.get("fecha"), row.get("guias"), row.get("retirado_mt")] for row in agrupar_tendencia_fecha_centro(self, filtrar_rows_centro_por_params(graficos_base.get("tendencia_fecha", []), params))],
+    )
+    add_sheet(
+        "Duracion por camion",
+        ["Camion", "Guia", "Empresa", "Producto", "Placa", "Bodega", "Duracion min"],
+        [
+            [row.get("camion"), row.get("guia"), row.get("empresa"), row.get("producto"), row.get("placa"), row.get("bodega_numero"), row.get("duracion_min")]
+            for row in filtrar_rows_centro_por_params(graficos_base.get("duracion_por_camion", []), params)
+        ],
+    )
+    add_sheet(
+        "Alertas operativas",
+        ["Severidad", "Tipo", "Mensaje"],
+        [[row.get("severidad"), row.get("tipo"), row.get("mensaje")] for row in alertas],
+    )
     wb.save(ruta)
 
 
@@ -1368,6 +1492,7 @@ def render_control_operativo_centro(self, data):
     plan_viajes = data.get("plan_viajes", {}) or {}
     self.centro_graficos_base = graficos
     self.centro_bodegas_base = bodegas
+    self.centro_reporte_data = data
     if not plan_viajes.get("mensaje"):
         promedio = self.safe_number(kpis.get("promedio_mt_camion"), 0)
         pendiente = self.safe_number(kpis.get("faltante_mt"), 0)
