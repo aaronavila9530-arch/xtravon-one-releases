@@ -455,6 +455,15 @@ def descargar_informe_seleccionado(self):
 
     params = self.obtener_parametros_informe()
 
+    if formato == "excel" and hay_filtros_tablas_informe(self):
+        try:
+            crear_excel_informe_desde_tablas_filtradas(self, ruta)
+            messagebox.showinfo("Informe exportado", f"Archivo generado correctamente:\n{ruta}")
+            self.informes_estado_var.set("Informe exportado en Excel con las filas filtradas visibles.")
+        except Exception as exc:
+            messagebox.showerror("Error al exportar", str(exc))
+        return
+
     def tarea():
         return self.api_descargar_reporte_buque(operacion.get("id"), formato, ruta, params)
 
@@ -477,6 +486,7 @@ def render_informe_detalle(self, data):
 
     for widget in self.informes_detalle_body.winfo_children():
         widget.destroy()
+    self.informes_tablas_actuales = []
 
     if not isinstance(data, dict):
         tk.Label(
@@ -1299,7 +1309,92 @@ def crear_tabla_informe(self, parent, titulo, columns, headings, data, height=10
     scroll_x.grid(row=1, column=0, sticky="ew")
     table_frame.grid_rowconfigure(0, weight=1)
     table_frame.grid_columnconfigure(0, weight=1)
+    tree._xtravon_report_title = titulo
+    tree._xtravon_report_headings = dict(headings or {})
+    if hasattr(self, "informes_tablas_actuales"):
+        self.informes_tablas_actuales.append(tree)
     return tree
+
+
+def hay_filtros_tablas_informe(self):
+    for tree in getattr(self, "informes_tablas_actuales", []) or []:
+        filtros = getattr(tree, "_xtravon_excel_filters", {}) or {}
+        if any(bool(values) for values in filtros.values()):
+            return True
+    return False
+
+
+def _valor_excel_informe(value):
+    texto = str(value or "").strip()
+    if not texto:
+        return ""
+    try:
+        numero = texto.replace("%", "").strip()
+        if "," in numero and "." in numero:
+            numero = numero.replace(",", "")
+        else:
+            numero = numero.replace(" ", "").replace(",", ".")
+        return float(numero)
+    except Exception:
+        return texto
+
+
+def _nombre_hoja_excel(nombre, usados):
+    base = "".join(ch for ch in str(nombre or "Reporte") if ch not in r'[]:*?/\\').strip()[:31] or "Reporte"
+    candidato = base
+    idx = 2
+    while candidato in usados:
+        sufijo = f" {idx}"
+        candidato = f"{base[:31 - len(sufijo)]}{sufijo}"
+        idx += 1
+    usados.add(candidato)
+    return candidato
+
+
+def crear_excel_informe_desde_tablas_filtradas(self, ruta):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except Exception as exc:
+        raise RuntimeError("No se pudo generar Excel filtrado: falta openpyxl en el entorno.") from exc
+
+    tablas = getattr(self, "informes_tablas_actuales", []) or []
+    tablas_filtradas = [
+        tree for tree in tablas
+        if any(bool(values) for values in (getattr(tree, "_xtravon_excel_filters", {}) or {}).values())
+    ]
+    if not tablas_filtradas:
+        raise RuntimeError("No hay tablas filtradas visibles para exportar.")
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    usados = set()
+    fill = PatternFill("solid", fgColor="6F775F")
+    for tree in tablas_filtradas:
+        titulo = getattr(tree, "_xtravon_report_title", "Reporte")
+        headings_map = getattr(tree, "_xtravon_report_headings", {}) or {}
+        columns = list(getattr(tree, "_xtravon_excel_columns", []) or tree["columns"])
+        headings = [str(headings_map.get(col, col)).replace(" *", "") for col in columns]
+        ws = wb.create_sheet(_nombre_hoja_excel(titulo, usados))
+        ws.append([titulo])
+        ws.append(headings)
+        for cell in ws[1]:
+            cell.font = Font(bold=True, size=13)
+        for cell in ws[2]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = fill
+        for item_id in tree.get_children(""):
+            values = list(tree.item(item_id, "values") or [])
+            ws.append([_valor_excel_informe(values[idx] if idx < len(values) else "") for idx, _col in enumerate(columns)])
+        for col_idx, _heading in enumerate(headings, start=1):
+            letter = get_column_letter(col_idx)
+            max_len = 12
+            for cell in ws[letter]:
+                max_len = max(max_len, len(str(cell.value or "")))
+            ws.column_dimensions[letter].width = min(max_len + 2, 42)
+        ws.freeze_panes = "A3"
+    wb.save(ruta)
 
 
 def crear_graficos_informe(self, specs):

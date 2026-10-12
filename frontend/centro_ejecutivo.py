@@ -470,24 +470,39 @@ def normalizar_filtro_centro(valor):
     return str(valor or "").strip().upper()
 
 
+def valores_filtro_centro(valor):
+    if valor in (None, ""):
+        return []
+    if isinstance(valor, (set, list, tuple)):
+        return [normalizar_filtro_centro(item) for item in valor if normalizar_filtro_centro(item)]
+    return [normalizar_filtro_centro(valor)]
+
+
 def producto_match_centro(producto_row, producto_filtro):
-    filtro = normalizar_filtro_centro(producto_filtro)
-    if not filtro:
+    filtros = valores_filtro_centro(producto_filtro)
+    if not filtros:
         return True
     producto = normalizar_filtro_centro(producto_row)
     if producto in ("", "TODOS", "ALL", "CUOTA GENERAL"):
         return False
     partes = [part.strip() for part in producto.replace(",", "/").split("/") if part.strip()]
-    return filtro == producto or filtro in partes
+    return any(filtro == producto or filtro in partes for filtro in filtros)
 
 
 def bodega_match_centro(row, bodega_filtro):
-    filtro = str(bodega_filtro or "").strip()
-    if not filtro:
+    filtros_raw = bodega_filtro if isinstance(bodega_filtro, (set, list, tuple)) else [bodega_filtro]
+    filtros = []
+    if not filtros_raw:
         return True
     import re
-    match = re.search(r"\d+", filtro)
-    filtro = match.group(0) if match else filtro
+    for filtro_item in filtros_raw:
+        filtro_text = str(filtro_item or "").strip()
+        if not filtro_text:
+            continue
+        match = re.search(r"\d+", filtro_text)
+        filtros.append(match.group(0) if match else filtro_text)
+    if not filtros:
+        return True
     valores = []
     for item in row.get("bodega_numeros") or []:
         valores.append(str(item).strip())
@@ -498,7 +513,7 @@ def bodega_match_centro(row, bodega_filtro):
     valores.extend(re.findall(r"\d+", bodega_texto))
     if not valores and bodega_texto.strip().upper() == "TODAS":
         return False
-    return filtro in set(valores)
+    return bool(set(filtros) & set(valores))
 
 
 def filtrar_clientes_centro_por_params(clientes, params):
@@ -525,10 +540,10 @@ def filtrar_clientes_centro_por_params(clientes, params):
 def row_match_centro_por_params(row, params):
     if not isinstance(row, dict):
         return False
-    empresa_filtro = normalizar_filtro_centro(params.get("empresa"))
-    if empresa_filtro:
+    empresa_filtros = valores_filtro_centro(params.get("empresa"))
+    if empresa_filtros:
         empresa = normalizar_filtro_centro(row.get("empresa") or row.get("cliente"))
-        if empresa and empresa != empresa_filtro:
+        if empresa and empresa not in empresa_filtros:
             return False
     producto_filtro = params.get("producto")
     if producto_filtro and (row.get("producto") not in (None, "")):
@@ -547,6 +562,11 @@ def filtrar_rows_centro_por_params(rows, params):
     if not any(params.get(key) for key in ("empresa", "producto", "bodega_numero")):
         return rows
     return [row for row in rows if row_match_centro_por_params(row, params)]
+
+
+def hay_filtro_tabla_excel_centro(tree):
+    filtros = getattr(tree, "_xtravon_excel_filters", {}) or {}
+    return any(bool(values) for values in filtros.values())
 
 
 def filtrar_graficos_centro_por_params(graficos, params):
@@ -1146,6 +1166,15 @@ def exportar_centro(self):
         return
     params = self.obtener_params_reporte_centro()
 
+    tree = getattr(self, "centro_cuotas_tree", None)
+    if formato == "excel" and hay_filtro_tabla_excel_centro(tree):
+        try:
+            crear_excel_centro_desde_tabla_filtrada(self, ruta)
+            messagebox.showinfo("Reporte exportado", f"Archivo generado correctamente:\n{ruta}")
+        except Exception as exc:
+            messagebox.showerror("Error al exportar", str(exc))
+        return
+
     def tarea():
         return self.api_descargar_reporte_buque(operacion_id, formato, ruta, params)
 
@@ -1158,6 +1187,174 @@ def exportar_centro(self):
         tarea,
         al_terminar,
     )
+
+
+def _valor_excel_centro(value):
+    texto = str(value or "").strip()
+    if not texto:
+        return ""
+    try:
+        numero = texto.replace("%", "").strip()
+        if "," in numero and "." in numero:
+            numero = numero.replace(",", "")
+        else:
+            numero = numero.replace(" ", "").replace(",", ".")
+        return float(numero)
+    except Exception:
+        return texto
+
+
+def _parse_numero_centro(value):
+    try:
+        texto = str(value or "").replace("%", "").strip()
+        if "," in texto and "." in texto:
+            texto = texto.replace(",", "")
+        else:
+            texto = texto.replace(" ", "").replace(",", ".")
+        return float(texto)
+    except Exception:
+        return 0.0
+
+
+def filas_cuotas_desde_visible_centro(self, visible_rows=None):
+    tree = getattr(self, "centro_cuotas_tree", None)
+    if tree is None:
+        return []
+    try:
+        columns = list(getattr(tree, "_xtravon_excel_columns", []) or tree["columns"])
+    except Exception:
+        return []
+    if visible_rows is None:
+        visible_rows = [{"values": tuple(tree.item(item_id, "values") or ())} for item_id in tree.get_children("")]
+    numericas = {
+        "cuota_real_mt",
+        "saldo_anterior_mt",
+        "nueva_cuota_mt",
+        "retirado_mt",
+        "pendiente_mt",
+        "avance_pct",
+        "guias",
+    }
+    rows = []
+    for item in visible_rows or []:
+        values = item.get("values", ()) if isinstance(item, dict) else ()
+        row = {}
+        for idx, col in enumerate(columns):
+            value = values[idx] if idx < len(values) else ""
+            row[col] = _parse_numero_centro(value) if col in numericas else str(value or "").strip()
+        cliente = row.get("cliente") or row.get("empresa") or "SIN CLIENTE"
+        producto = row.get("producto") or "SIN PRODUCTO"
+        bodega = row.get("bodega") or "Todas"
+        import re
+        match = re.search(r"\d+", str(bodega))
+        row["empresa"] = cliente
+        row["cliente"] = cliente
+        row["producto"] = producto
+        row["bodega"] = bodega
+        row["bodega_numero"] = match.group(0) if match else 0
+        row["cuota_mt"] = row.get("nueva_cuota_mt", row.get("cuota_real_mt", 0))
+        row["saldo_mt"] = row.get("pendiente_mt", 0)
+        row["faltante_mt"] = max(row.get("pendiente_mt", 0), 0)
+        row["cliente_producto"] = f"{cliente} | {producto}"
+        row["bodega_producto"] = f"{bodega} | {producto}"
+        rows.append(row)
+    return rows
+
+
+def graficos_desde_cuotas_visibles_centro(self, visible_rows=None):
+    rows = filas_cuotas_desde_visible_centro(self, visible_rows)
+    if not rows:
+        return {}
+
+    def acumular(keys):
+        data = {}
+        for row in rows:
+            key = tuple(row.get(item) for item in keys)
+            item = data.setdefault(key, {item_key: row.get(item_key) for item_key in keys})
+            item["guias"] = item.get("guias", 0) + self.safe_number(row.get("guias"), 0)
+            item["cuota_mt"] = item.get("cuota_mt", 0) + self.safe_number(row.get("cuota_mt"), 0)
+            item["retirado_mt"] = item.get("retirado_mt", 0) + self.safe_number(row.get("retirado_mt"), 0)
+            item["faltante_mt"] = item.get("faltante_mt", 0) + self.safe_number(row.get("faltante_mt"), 0)
+            item["saldo_mt"] = item.get("saldo_mt", 0) + self.safe_number(row.get("saldo_mt"), 0)
+        for item in data.values():
+            cuota = self.safe_number(item.get("cuota_mt"), 0)
+            item["avance_pct"] = (self.safe_number(item.get("retirado_mt"), 0) / cuota * 100) if cuota else 0
+        return list(data.values())
+
+    por_bodega = acumular(("bodega", "bodega_numero", "producto"))
+    for row in por_bodega:
+        row["capacidad_mt"] = row.get("cuota_mt", 0)
+    por_cliente = acumular(("cliente", "empresa", "producto", "bodega", "bodega_numero"))
+    for row in por_cliente:
+        row["cliente_producto"] = f"{row.get('cliente') or row.get('empresa')} | {row.get('producto')}"
+    por_producto = acumular(("producto",))
+
+    descargado = sum(self.safe_number(row.get("retirado_mt"), 0) for row in rows)
+    pendiente = sum(self.safe_number(row.get("faltante_mt"), 0) for row in rows)
+    guias = sum(self.safe_number(row.get("guias"), 0) for row in rows)
+
+    return {
+        "avance_bodegas": por_bodega,
+        "avance_bodegas_detalle": por_bodega,
+        "faltante_bodegas": por_bodega,
+        "retiro_por_cliente": por_cliente,
+        "cuota_vs_retiro_cliente": por_cliente,
+        "retiro_por_producto": por_producto,
+        "estado_descarga": [
+            {"estado": "Descargado", "valor": descargado},
+            {"estado": "Pendiente de descarga", "valor": pendiente},
+        ],
+        "estado_guias": [
+            {"estado": "Completas", "valor": guias},
+            {"estado": "Pendientes", "valor": 0},
+        ],
+    }
+
+
+def crear_excel_centro_desde_tabla_filtrada(self, ruta):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except Exception as exc:
+        raise RuntimeError("No se pudo generar Excel filtrado: falta openpyxl en el entorno.") from exc
+
+    tree = getattr(self, "centro_cuotas_tree", None)
+    if tree is None:
+        raise RuntimeError("No hay tabla de cuotas visible para exportar.")
+
+    columns = list(getattr(tree, "_xtravon_excel_columns", []) or tree["columns"])
+    headings = []
+    for col in columns:
+        try:
+            headings.append(str(tree.heading(col, "text") or col).replace(" *", ""))
+        except Exception:
+            headings.append(str(col))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cuota vs descargado"
+    ws.append(["Cuota vs descargado real - filas filtradas"])
+    ws.append(headings)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, size=13)
+    header_fill = PatternFill("solid", fgColor="6F775F")
+    for cell in ws[2]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+
+    for item_id in tree.get_children(""):
+        values = list(tree.item(item_id, "values") or [])
+        ws.append([_valor_excel_centro(values[idx] if idx < len(values) else "") for idx, _col in enumerate(columns)])
+
+    for col_idx, _heading in enumerate(headings, start=1):
+        letter = get_column_letter(col_idx)
+        max_len = 12
+        for cell in ws[letter]:
+            max_len = max(max_len, len(str(cell.value or "")))
+        ws.column_dimensions[letter].width = min(max_len + 2, 42)
+    ws.freeze_panes = "A3"
+    wb.save(ruta)
 
 
 def render_control_operativo_centro(self, data):
@@ -1218,22 +1415,26 @@ def params_centro_desde_filtro_tabla(self):
     filters = getattr(tree, "_xtravon_excel_filters", {}) or {}
     params = self.obtener_params_reporte_centro() if hasattr(self, "obtener_params_reporte_centro") else {}
 
-    def primer_valor(col):
+    def valores(col):
         values = [str(item or "").strip() for item in filters.get(col, set()) if str(item or "").strip()]
-        return sorted(values)[0] if values else ""
+        return sorted(values)
 
-    cliente = primer_valor("cliente")
-    producto = primer_valor("producto")
-    bodega = primer_valor("bodega")
-    if cliente:
-        params["empresa"] = cliente
-    if producto:
-        params["producto"] = producto
-    if bodega:
+    clientes = valores("cliente")
+    productos = valores("producto")
+    bodegas = valores("bodega")
+    if clientes:
+        params["empresa"] = clientes
+    if productos:
+        params["producto"] = productos
+    if bodegas:
         import re
-        match = re.search(r"\d+", bodega)
-        if match:
-            params["bodega_numero"] = match.group(0)
+        bodega_nums = []
+        for bodega in bodegas:
+            match = re.search(r"\d+", bodega)
+            if match:
+                bodega_nums.append(match.group(0))
+        if bodega_nums:
+            params["bodega_numero"] = sorted(set(bodega_nums))
     return params
 
 
@@ -1296,17 +1497,18 @@ def params_centro_desde_rows_tabla(self, visible_rows):
     total_rows = len(visible_rows or [])
     all_rows = len(getattr(self.centro_cuotas_tree, "_xtravon_excel_all_rows", []) or [])
     if 0 < len(productos) < max(total_rows, all_rows):
-        if len(productos) == 1:
-            params["producto"] = next(iter(productos))
+        params["producto"] = sorted(productos)
     if 0 < len(clientes) < max(total_rows, all_rows):
-        if len(clientes) == 1:
-            params["empresa"] = next(iter(clientes))
+        params["empresa"] = sorted(clientes)
     if 0 < len(bodegas) < max(total_rows, all_rows):
-        if len(bodegas) == 1:
-            import re
-            match = re.search(r"\d+", next(iter(bodegas)))
+        import re
+        bodega_nums = []
+        for bodega in bodegas:
+            match = re.search(r"\d+", bodega)
             if match:
-                params["bodega_numero"] = match.group(0)
+                bodega_nums.append(match.group(0))
+        if bodega_nums:
+            params["bodega_numero"] = sorted(set(bodega_nums))
     return params
 
 
@@ -1317,6 +1519,11 @@ def actualizar_graficos_centro_desde_filtro_tabla(self, visible_rows=None):
     params = self.params_centro_desde_filtro_tabla()
     params.update(self.params_centro_desde_rows_tabla(visible_rows))
     graficos_filtrados = filtrar_graficos_centro_por_params(graficos, params)
+    tree = getattr(self, "centro_cuotas_tree", None)
+    if hay_filtro_tabla_excel_centro(tree):
+        graficos_desde_tabla = graficos_desde_cuotas_visibles_centro(self, visible_rows)
+        if graficos_desde_tabla:
+            graficos_filtrados = {**graficos_filtrados, **graficos_desde_tabla}
     bodegas = getattr(self, "centro_bodegas_base", [])
     dibujar_buque_centro(self, filtrar_rows_centro_por_params(bodegas, params))
     render_graficos_operativos_centro(self, graficos_filtrados, params)
