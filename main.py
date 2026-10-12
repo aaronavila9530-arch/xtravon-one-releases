@@ -2479,7 +2479,7 @@ class ERPElSurcoApp(tk.Tk):
     def api_reabrir_operacion_buque(self, operacion_id):
         respuesta = requests.post(
             f"{self.api_base}/operaciones-buque/{operacion_id}/reabrir",
-            json={"cerrar_otras_abiertas": True},
+            json={"cerrar_otras_abiertas": False},
             timeout=60,
         )
         if respuesta.status_code != 200:
@@ -6827,7 +6827,7 @@ class ERPElSurcoApp(tk.Tk):
             "fecha_inicio": fecha_inicio,
             "producto": " / ".join(productos),
             "observaciones": None,
-            "cerrar_operaciones_abiertas": True,
+            "cerrar_operaciones_abiertas": False,
             "cuotas": cuotas,
             "bodegas": bodegas,
         }
