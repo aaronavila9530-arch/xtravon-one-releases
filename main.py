@@ -540,6 +540,10 @@ class ERPElSurcoApp(tk.Tk):
                 callback(visible_rows)
             except Exception:
                 pass
+        try:
+            tree.event_generate("<<XtravonExcelFiltered>>", when="tail")
+        except Exception:
+            pass
 
     def _actualizar_encabezados_tabla_excel(self, tree):
         columns = list(getattr(tree, "_xtravon_excel_columns", []) or [])

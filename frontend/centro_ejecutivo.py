@@ -54,6 +54,7 @@ def install_centro_ejecutivo_screen(app_class):
     app_class.valor_descargado_visible_centro = valor_descargado_visible_centro
     app_class.normalizar_estado_descarga_visible_centro = normalizar_estado_descarga_visible_centro
     app_class.crear_chart_barras_interactivo_centro = crear_chart_barras_interactivo_centro
+    app_class.configurar_sync_filtro_tabla_centro = configurar_sync_filtro_tabla_centro
 
 
 def show_centro_ejecutivo(self):
@@ -232,7 +233,7 @@ def show_centro_ejecutivo(self):
         "avance_pct": 100,
     }.items():
         self.centro_cuotas_tree.column(col, width=width)
-    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
+    self.configurar_sync_filtro_tabla_centro()
 
     self.centro_charts_frame = tk.Frame(body, bg=self.colors["bg_main"])
     self.centro_charts_frame.pack(fill="both", expand=True, pady=(0, 12))
@@ -1232,7 +1233,37 @@ def params_centro_desde_filtro_tabla(self):
     return params
 
 
+def configurar_sync_filtro_tabla_centro(self):
+    tree = getattr(self, "centro_cuotas_tree", None)
+    if tree is None:
+        return
+
+    tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
+    if getattr(tree, "_centro_excel_filter_bound", False):
+        return
+
+    tree.bind(
+        "<<XtravonExcelFiltered>>",
+        lambda _event: self.actualizar_graficos_centro_desde_filtro_tabla(),
+        add="+",
+    )
+    tree._centro_excel_filter_bound = True
+
+
 def params_centro_desde_rows_tabla(self, visible_rows):
+    if visible_rows is None:
+        tree = getattr(self, "centro_cuotas_tree", None)
+        visible_rows = []
+        if tree is not None:
+            try:
+                visible_rows = [
+                    {
+                        "values": tuple(tree.item(item_id, "values") or ()),
+                    }
+                    for item_id in tree.get_children("")
+                ]
+            except Exception:
+                visible_rows = []
     if not visible_rows:
         return {}
     try:
@@ -1707,7 +1738,7 @@ def crear_chart_barras_interactivo_centro(self, parent, title, data, label_key, 
 
 
 def render_tablas_operativas_centro(self, cuotas, alertas):
-    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
+    self.configurar_sync_filtro_tabla_centro()
     for tree, rows in [(self.centro_cuotas_tree, cuotas), (self.centro_alertas_tree, alertas)]:
         for item in tree.get_children():
             tree.delete(item)
@@ -1727,7 +1758,7 @@ def render_tablas_operativas_centro(self, cuotas, alertas):
                 f"{self.safe_number(row.get('avance_pct')):,.2f}%",
             ),
         )
-    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
+    self.configurar_sync_filtro_tabla_centro()
     for row in alertas:
         self.centro_alertas_tree.insert("", "end", values=(row.get("severidad", ""), row.get("tipo", ""), row.get("mensaje", "")))
 
