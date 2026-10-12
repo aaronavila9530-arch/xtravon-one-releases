@@ -1375,7 +1375,9 @@ def render_graficos_operativos_centro(self, graficos):
     charts_grid = tk.Frame(self.centro_charts_frame, bg=self.colors["bg_main"])
     charts_grid.pack(fill="both", expand=True)
     charts_grid.bind("<Button-1>", lambda _event: self.limpiar_filtros_visuales_centro())
+    params_actuales = self.obtener_params_reporte_centro() if hasattr(self, "obtener_params_reporte_centro") else {}
     bodegas_chart_base = graficos.get("avance_bodegas_detalle") or graficos.get("avance_bodegas", [])
+    bodegas_chart_base = filtrar_rows_centro_por_params(bodegas_chart_base, params_actuales)
     avance_bodegas_descargado = [
         {
             **row,
@@ -1384,23 +1386,25 @@ def render_graficos_operativos_centro(self, graficos):
         for row in bodegas_chart_base
         if isinstance(row, dict)
     ]
+    retiro_cliente_base = filtrar_rows_centro_por_params(graficos.get("retiro_por_cliente", []), params_actuales)
     retiro_cliente_mt = [
         {
             **row,
             "cliente_producto": f"{row.get('cliente') or row.get('empresa') or 'SIN CLIENTE'} | {('Cuota general' if str(row.get('producto') or '').strip().upper() in ('', 'TODOS', 'ALL') else row.get('producto'))}",
         }
-        for row in graficos.get("retiro_por_cliente", [])
+        for row in retiro_cliente_base
         if isinstance(row, dict)
     ]
+    retiro_producto_base = filtrar_rows_centro_por_params(graficos.get("retiro_por_producto", []), params_actuales)
     retiro_producto_mt = [
         {
             **row,
             "producto": "Cuota general" if str(row.get("producto") or "").strip().upper() in ("", "TODOS", "ALL") else row.get("producto"),
         }
-        for row in graficos.get("retiro_por_producto", [])
+        for row in retiro_producto_base
         if isinstance(row, dict)
     ]
-    tendencia_mt = graficos.get("tendencia_fecha", [])
+    tendencia_mt = filtrar_rows_centro_por_params(graficos.get("tendencia_fecha", []), params_actuales)
     estado_descarga = graficos.get("estado_descarga", [])
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
@@ -1445,7 +1449,8 @@ def render_graficos_operativos_centro(self, graficos):
     )
     self.crear_chart_circular(charts_grid, "Estado de guias", graficos.get("estado_guias", []), "estado", "valor", 2, 1)
     self.crear_chart_lineal(charts_grid, "Tendencia diaria descargado (MT)", tendencia_mt, "fecha", "retirado_mt", 3, 0)
-    self.crear_chart_barras(charts_grid, "Duracion por camion (min)", graficos.get("duracion_por_camion", []), "camion", "duracion_min", 3, 1)
+    duracion_camion = filtrar_rows_centro_por_params(graficos.get("duracion_por_camion", []), params_actuales)
+    self.crear_chart_barras(charts_grid, "Duracion por camion (min)", duracion_camion, "camion", "duracion_min", 3, 1)
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
         "Avance por bodega (%)",
