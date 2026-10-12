@@ -212,10 +212,6 @@ def show_centro_ejecutivo(self):
     lectura_host.grid_columnconfigure(0, weight=1)
     self.actualizar_lectura_centro("Presione Buscar operacion, seleccione un buque y luego Generar datos.")
 
-    self.centro_charts_frame = tk.Frame(body, bg=self.colors["bg_main"])
-    self.centro_charts_frame.pack(fill="both", expand=True, pady=(0, 12))
-    self.centro_charts_frame.bind("<Button-1>", lambda _event: self.limpiar_filtros_visuales_centro())
-
     self.centro_cuotas_tree = self.crear_tabla_centro(
         body,
         "Cuota vs descargado real",
@@ -237,6 +233,11 @@ def show_centro_ejecutivo(self):
     }.items():
         self.centro_cuotas_tree.column(col, width=width)
     self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
+
+    self.centro_charts_frame = tk.Frame(body, bg=self.colors["bg_main"])
+    self.centro_charts_frame.pack(fill="both", expand=True, pady=(0, 12))
+    self.centro_charts_frame.bind("<Button-1>", lambda _event: self.limpiar_filtros_visuales_centro())
+
     self.centro_alertas_tree = self.crear_tabla_centro(
         body,
         "Alertas operativas",
@@ -1231,11 +1232,55 @@ def params_centro_desde_filtro_tabla(self):
     return params
 
 
-def actualizar_graficos_centro_desde_filtro_tabla(self, _visible_rows=None):
+def params_centro_desde_rows_tabla(self, visible_rows):
+    if not visible_rows:
+        return {}
+    try:
+        columns = list(getattr(self.centro_cuotas_tree, "_xtravon_excel_columns", []) or self.centro_cuotas_tree["columns"])
+    except Exception:
+        return {}
+
+    def valores_columna(col):
+        try:
+            idx = columns.index(col)
+        except ValueError:
+            return set()
+        valores = set()
+        for row in visible_rows or []:
+            values = row.get("values", ()) if isinstance(row, dict) else ()
+            if idx < len(values):
+                value = str(values[idx] or "").strip()
+                if value:
+                    valores.add(value)
+        return valores
+
+    params = {}
+    productos = valores_columna("producto")
+    clientes = valores_columna("cliente")
+    bodegas = valores_columna("bodega")
+    total_rows = len(visible_rows or [])
+    all_rows = len(getattr(self.centro_cuotas_tree, "_xtravon_excel_all_rows", []) or [])
+    if 0 < len(productos) < max(total_rows, all_rows):
+        if len(productos) == 1:
+            params["producto"] = next(iter(productos))
+    if 0 < len(clientes) < max(total_rows, all_rows):
+        if len(clientes) == 1:
+            params["empresa"] = next(iter(clientes))
+    if 0 < len(bodegas) < max(total_rows, all_rows):
+        if len(bodegas) == 1:
+            import re
+            match = re.search(r"\d+", next(iter(bodegas)))
+            if match:
+                params["bodega_numero"] = match.group(0)
+    return params
+
+
+def actualizar_graficos_centro_desde_filtro_tabla(self, visible_rows=None):
     graficos = getattr(self, "centro_graficos_base", None)
     if not isinstance(graficos, dict):
         return
     params = self.params_centro_desde_filtro_tabla()
+    params.update(self.params_centro_desde_rows_tabla(visible_rows))
     graficos_filtrados = filtrar_graficos_centro_por_params(graficos, params)
     bodegas = getattr(self, "centro_bodegas_base", [])
     dibujar_buque_centro(self, filtrar_rows_centro_por_params(bodegas, params))
@@ -1662,6 +1707,7 @@ def crear_chart_barras_interactivo_centro(self, parent, title, data, label_key, 
 
 
 def render_tablas_operativas_centro(self, cuotas, alertas):
+    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
     for tree, rows in [(self.centro_cuotas_tree, cuotas), (self.centro_alertas_tree, alertas)]:
         for item in tree.get_children():
             tree.delete(item)
@@ -1681,6 +1727,7 @@ def render_tablas_operativas_centro(self, cuotas, alertas):
                 f"{self.safe_number(row.get('avance_pct')):,.2f}%",
             ),
         )
+    self.centro_cuotas_tree._xtravon_excel_on_filter = lambda visible_rows: self.actualizar_graficos_centro_desde_filtro_tabla(visible_rows)
     for row in alertas:
         self.centro_alertas_tree.insert("", "end", values=(row.get("severidad", ""), row.get("tipo", ""), row.get("mensaje", "")))
 
