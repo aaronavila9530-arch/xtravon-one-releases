@@ -102,19 +102,17 @@ def install_liquidaciones_choferes_screen(app_class):
         grid = tk.Frame(filters, bg=self.colors["bg_card"])
         grid.pack(fill="x", padx=12, pady=(0, 12))
 
+        for key in ("empresa", "producto", "chofer", "placa", "guia"):
+            self.liq_filters[key] = tk.StringVar()
+
         campos = [
             ("operacion", "Operacion", 44),
-            ("empresa", "Empresa", 24),
-            ("producto", "Producto", 24),
-            ("chofer", "Chofer", 30),
-            ("placa", "Placa", 18),
-            ("guia", "Guia", 18),
             ("fecha_desde", "Desde YYYY-MM-DD", 16),
             ("fecha_hasta", "Hasta YYYY-MM-DD", 16),
         ]
         for idx, (key, label, width) in enumerate(campos):
-            row = idx // 4
-            col = idx % 4
+            row = 0
+            col = idx
             box = tk.Frame(grid, bg=self.colors["bg_card"])
             box.grid(row=row, column=col, sticky="ew", padx=6, pady=5)
             tk.Label(
@@ -133,7 +131,7 @@ def install_liquidaciones_choferes_screen(app_class):
                 widget = self.crear_selector_filtrable_despacho(box, var, width=width)
                 widget.pack(fill="x")
             self.liq_widgets[key] = widget
-        for col in range(4):
+        for col in range(3):
             grid.grid_columnconfigure(col, weight=1)
 
         self.liq_status = tk.Label(
@@ -296,7 +294,9 @@ def install_liquidaciones_choferes_screen(app_class):
                 "placa": "placas",
                 "guia": "guias",
             }.items():
-                self.configurar_combo_filtrable_despacho(self.liq_widgets[key], opciones.get(source, []), self.liq_filters[key])
+                widget = self.liq_widgets.get(key)
+                if widget is not None:
+                    self.configurar_combo_filtrable_despacho(widget, opciones.get(source, []), self.liq_filters[key])
             if not self.liq_filters["operacion"].get() and data.get("operacion"):
                 op_id = data["operacion"].get("id")
                 for label in operaciones:

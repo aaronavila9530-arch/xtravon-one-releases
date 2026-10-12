@@ -107,31 +107,7 @@ def show_centro_ejecutivo(self):
     ttk.Button(top_actions, text="Generar datos", style="Gray.TButton", command=self.analizar_operacion_centro).pack(side="left", padx=(0, 8))
     ttk.Button(top_actions, text="Cerrar operacion", style="Gray.TButton", command=self.cerrar_operacion_centro).pack(side="left", padx=(0, 8))
 
-    filters = tk.Frame(actions, bg=self.colors["bg_card"])
-    filters.pack(fill="x", padx=12, pady=(0, 8))
-
-    filter_specs = [
-        ("guia", "Guia", self.centro_guia_var, 14),
-        ("chofer", "Chofer", self.centro_chofer_var, 18),
-        ("placa", "Placa", self.centro_placa_var, 12),
-        ("estado", "Estado", self.centro_estado_filtro_var, 12),
-        ("etapa_qr", "Etapa QR", self.centro_etapa_qr_var, 12),
-    ]
     self.centro_extra_filter_widgets = {}
-    for idx, (key, label, var, width) in enumerate(filter_specs):
-        box = tk.Frame(filters, bg=self.colors["bg_card"])
-        box.grid(row=idx // 5, column=idx % 5, sticky="ew", padx=5, pady=4)
-        tk.Label(box, text=label, bg=self.colors["bg_card"], fg=self.colors["text_dark"], font=("Segoe UI", 9, "bold")).pack(anchor="w")
-        combo = ttk.Combobox(box, textvariable=var, values=[""], state="normal", width=width)
-        combo.pack(fill="x")
-        combo.bind("<<ComboboxSelected>>", lambda _event: self.programar_filtrado_centro())
-        combo.bind("<KeyRelease>", lambda _event: self.programar_filtrado_centro(delay=650))
-        combo.bind("<Return>", lambda _event: self.programar_filtrado_centro(delay=80))
-        combo.bind("<FocusOut>", lambda _event: self.programar_filtrado_centro(delay=250))
-        self.centro_extra_filter_widgets[key] = combo
-
-    for col in range(5):
-        filters.grid_columnconfigure(col, weight=1)
 
     export_bar = tk.Frame(actions, bg=self.colors["bg_card"])
     export_bar.pack(fill="x", padx=12, pady=(0, 10))

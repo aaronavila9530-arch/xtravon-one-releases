@@ -3427,35 +3427,6 @@ class ERPElSurcoApp(tk.Tk):
 
         self.boletas_filter_vars = {key: tk.StringVar() for key in ("empresa", "guia", "producto", "chofer", "placa")}
         self.boletas_filter_widgets = {}
-        filtros_panel = tk.Frame(
-            self.content,
-            bg=self.colors["bg_card"],
-            highlightbackground=self.colors["border"],
-            highlightthickness=1,
-        )
-        filtros_panel.pack(fill="x", padx=25, pady=(0, 10))
-        filtros_grid = tk.Frame(filtros_panel, bg=self.colors["bg_card"])
-        filtros_grid.pack(fill="x", padx=12, pady=10)
-        for idx, (key, label) in enumerate([
-            ("empresa", "Empresa"),
-            ("guia", "Guia"),
-            ("producto", "Producto"),
-            ("chofer", "Chofer"),
-            ("placa", "Placa"),
-        ]):
-            box = tk.Frame(filtros_grid, bg=self.colors["bg_card"])
-            box.grid(row=idx // 5, column=idx % 5, sticky="ew", padx=5, pady=4)
-            tk.Label(box, text=label, font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
-            combo = ttk.Combobox(box, textvariable=self.boletas_filter_vars[key], values=[""], state="normal")
-            combo.pack(fill="x")
-            self.boletas_filter_widgets[key] = combo
-        for col in range(5):
-            filtros_grid.grid_columnconfigure(col, weight=1)
-        filtros_actions = tk.Frame(filtros_panel, bg=self.colors["bg_card"])
-        filtros_actions.pack(fill="x", padx=12, pady=(0, 10))
-        ttk.Button(filtros_actions, text="Cargar filtros", style="Gray.TButton", command=self.cargar_filtros_boletas).pack(side="left", padx=(0, 8))
-        ttk.Button(filtros_actions, text="Buscar tabla", style="Olive.TButton", command=self.refrescar_boletas).pack(side="left", padx=(0, 8))
-        ttk.Button(filtros_actions, text="Limpiar", style="Gray.TButton", command=self.limpiar_filtros_boletas).pack(side="left")
 
         actions = tk.Frame(self.content, bg=self.colors["bg_main"])
         actions.pack(fill="x", padx=25, pady=(5, 10))
@@ -7054,42 +7025,6 @@ class ERPElSurcoApp(tk.Tk):
             "Aprobaciones",
             "Cargue el template de la operacion activa y apruebe o rechace registros pendientes.",
         )
-
-        filtros_panel = tk.Frame(
-            self.content,
-            bg=self.colors["bg_card"],
-            highlightbackground=self.colors["border"],
-            highlightthickness=1,
-        )
-        filtros_panel.pack(fill="x", padx=25, pady=(0, 10))
-        tk.Label(
-            filtros_panel,
-            text="Filtros dinamicos",
-            font=("Segoe UI", 10, "bold"),
-            bg=self.colors["bg_card"],
-            fg=self.colors["text_dark"],
-        ).pack(anchor="w", padx=14, pady=(10, 4))
-        filtros_grid = tk.Frame(filtros_panel, bg=self.colors["bg_card"])
-        filtros_grid.pack(fill="x", padx=14, pady=(0, 8))
-        for idx, (key, label) in enumerate([
-            ("guia", "Guia"),
-            ("empresa", "Empresa"),
-            ("producto", "Producto"),
-            ("chofer", "Chofer actual"),
-            ("placa", "Placa"),
-        ]):
-            box = tk.Frame(filtros_grid, bg=self.colors["bg_card"])
-            box.grid(row=0, column=idx, sticky="ew", padx=4)
-            tk.Label(box, text=label, font=("Segoe UI", 9, "bold"), bg=self.colors["bg_card"], fg=self.colors["text_dark"]).pack(anchor="w")
-            selector = self.crear_selector_filtrable_despacho(box, self.aprobaciones_filter_vars[key], width=18)
-            selector.pack(fill="x")
-            self.aprobaciones_filter_widgets[key] = selector
-            filtros_grid.grid_columnconfigure(idx, weight=1)
-        filtros_actions = tk.Frame(filtros_panel, bg=self.colors["bg_card"])
-        filtros_actions.pack(fill="x", padx=14, pady=(0, 10))
-        ttk.Button(filtros_actions, text="Cargar filtros", style="Gray.TButton", command=self.cargar_filtros_aprobaciones_front).pack(side="left", padx=(0, 8))
-        ttk.Button(filtros_actions, text="Buscar pendientes", style="Olive.TButton", command=self.ver_aprobaciones_pendientes_front).pack(side="left", padx=(0, 8))
-        ttk.Button(filtros_actions, text="Limpiar", style="Gray.TButton", command=self.limpiar_filtros_aprobaciones_front).pack(side="left")
 
         actions = tk.Frame(self.content, bg=self.colors["bg_main"])
         actions.pack(fill="x", padx=25, pady=(0, 10))
