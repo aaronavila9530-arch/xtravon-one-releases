@@ -1942,21 +1942,33 @@ def dibujar_buque_centro(self, bodegas):
             canvas.create_line(hold_left + 2, fill_top, hold_right - 2, fill_top, fill="#07111F", width=2, tags=(tag,))
         canvas.create_rectangle(x, hold_top, x + seg_w - 12, hold_top + 8, fill="#07111F", outline="", tags=(tag,))
         text_font_size = max(7, font_size - 1) if producto else font_size
+        def fmt_mt_silueta(valor):
+            valor = self.safe_number(valor, 0)
+            if 0 < abs(valor) < 1:
+                return f"{valor:,.2f}"
+            return f"{valor:,.0f}" if seg_w < 135 else f"{valor:,.2f}"
+
+        def fmt_pct_silueta(valor):
+            valor = self.safe_number(valor, 0)
+            if 0 < abs(valor) < 1:
+                return f"{valor:,.2f}%"
+            return f"{valor:,.0f}%" if seg_w < 135 else f"{valor:,.2f}%"
+
         if seg_w < 135:
             producto_linea = f"\n{producto[:10]}" if producto else ""
             text = (
                 f"B{numero}{producto_linea}\n"
-                f"Cap {capacidad:,.0f}\n"
-                f"D {retirado_visible:,.0f} ({pct_avance:,.0f}%)\n"
-                f"P {faltante:,.0f} ({pct_restante * 100:,.0f}%)"
+                f"Cap {fmt_mt_silueta(capacidad)}\n"
+                f"D {fmt_mt_silueta(retirado_visible)} ({fmt_pct_silueta(pct_avance)})\n"
+                f"P {fmt_mt_silueta(faltante)} ({fmt_pct_silueta(pct_restante * 100)})"
             )
         else:
             titulo = f"B{numero}" if not producto else f"B{numero} | {producto}"
             text = (
                 f"{titulo}\n"
-                f"Cap {capacidad:,.2f} MT\n"
-                f"D {retirado_visible:,.2f} ({pct_avance:,.2f}%)\n"
-                f"P {faltante:,.2f} ({pct_restante * 100:,.2f}%)"
+                f"Cap {fmt_mt_silueta(capacidad)} MT\n"
+                f"D {fmt_mt_silueta(retirado_visible)} ({fmt_pct_silueta(pct_avance)})\n"
+                f"P {fmt_mt_silueta(faltante)} ({fmt_pct_silueta(pct_restante * 100)})"
             )
         canvas.create_text(
             x + (seg_w - 12) / 2,

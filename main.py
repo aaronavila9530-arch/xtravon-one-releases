@@ -2995,7 +2995,9 @@ class ERPElSurcoApp(tk.Tk):
                 nivel_y = ry1 - (ry1 - ry0) * restante_ratio
                 canvas.create_line(rx0 + 2, nivel_y, rx1 - 2, nivel_y, fill=self.colors["text_light"], width=2)
             productos = ", ".join(sorted(item.get("productos", []))[:2]) if item else ""
-            label = f"B{numero}\nPend. {pendiente:,.0f} MT\n{pendiente_pct:,.1f}%"
+            pendiente_txt = f"{pendiente:,.2f}" if 0 < abs(pendiente) < 1 else f"{pendiente:,.0f}"
+            pendiente_pct_txt = f"{pendiente_pct:,.2f}%" if 0 < abs(pendiente_pct) < 1 else f"{pendiente_pct:,.1f}%"
+            label = f"B{numero}\nPend. {pendiente_txt} MT\n{pendiente_pct_txt}"
             if capacidad:
                 label += f"\nTot. {capacidad:,.0f}"
             if productos:
