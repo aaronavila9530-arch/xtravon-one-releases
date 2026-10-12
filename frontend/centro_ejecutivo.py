@@ -421,6 +421,7 @@ def analizar_operacion_centro(self, silencioso=False):
             "bodegas": bodegas_filtradas,
             "kpis": kpis,
             "graficos": graficos_filtrados,
+            "filtros_activos": params,
             "alertas": alertas,
             "plan_viajes": plan_viajes,
             "cuotas_vs_retiro": [
@@ -1159,6 +1160,7 @@ def render_control_operativo_centro(self, data):
     cuotas = data.get("cuotas_vs_retiro", [])
     alertas = data.get("alertas", [])
     bodegas = data.get("bodegas", [])
+    filtros_activos = data.get("filtros_activos", {}) or {}
     plan_viajes = data.get("plan_viajes", {}) or {}
     if not plan_viajes.get("mensaje"):
         promedio = self.safe_number(kpis.get("promedio_mt_camion"), 0)
@@ -1198,7 +1200,7 @@ def render_control_operativo_centro(self, data):
     )
     render_kpis_operativos_centro(self, kpis)
     dibujar_buque_centro(self, bodegas)
-    render_graficos_operativos_centro(self, graficos)
+    render_graficos_operativos_centro(self, graficos, filtros_activos)
     render_tablas_operativas_centro(self, cuotas, alertas)
 
 
@@ -1369,13 +1371,15 @@ def normalizar_estado_descarga_visible_centro(self, data):
     return normalizados
 
 
-def render_graficos_operativos_centro(self, graficos):
+def render_graficos_operativos_centro(self, graficos, filtros_activos=None):
     for widget in self.centro_charts_frame.winfo_children():
         widget.destroy()
     charts_grid = tk.Frame(self.centro_charts_frame, bg=self.colors["bg_main"])
     charts_grid.pack(fill="both", expand=True)
     charts_grid.bind("<Button-1>", lambda _event: self.limpiar_filtros_visuales_centro())
-    params_actuales = self.obtener_params_reporte_centro() if hasattr(self, "obtener_params_reporte_centro") else {}
+    params_actuales = filtros_activos or (self.obtener_params_reporte_centro() if hasattr(self, "obtener_params_reporte_centro") else {})
+    producto_activo = str(params_actuales.get("producto") or "").strip()
+    sufijo_filtro = f" - {producto_activo}" if producto_activo else ""
     bodegas_chart_base = graficos.get("avance_bodegas_detalle") or graficos.get("avance_bodegas", [])
     bodegas_chart_base = filtrar_rows_centro_por_params(bodegas_chart_base, params_actuales)
     avance_bodegas_descargado = [
@@ -1408,7 +1412,7 @@ def render_graficos_operativos_centro(self, graficos):
     estado_descarga = graficos.get("estado_descarga", [])
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
-        "Descargado por bodega (MT)",
+        f"Descargado por bodega (MT){sufijo_filtro}",
         avance_bodegas_descargado,
         "bodega_producto",
         "retirado_mt",
@@ -1418,7 +1422,7 @@ def render_graficos_operativos_centro(self, graficos):
     )
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
-        "Pendiente por bodega (MT)",
+        f"Pendiente por bodega (MT){sufijo_filtro}",
         avance_bodegas_descargado,
         "bodega_producto",
         "faltante_mt",
@@ -1429,7 +1433,7 @@ def render_graficos_operativos_centro(self, graficos):
     self.crear_chart_circular(charts_grid, "Estado descarga", estado_descarga, "estado", "valor", 1, 0)
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
-        "Descargado por cliente (MT)",
+        f"Descargado por cliente (MT){sufijo_filtro}",
         retiro_cliente_mt,
         "cliente_producto",
         "retirado_mt",
@@ -1439,7 +1443,7 @@ def render_graficos_operativos_centro(self, graficos):
     )
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
-        "Descargado por producto (MT)",
+        f"Descargado por producto (MT){sufijo_filtro}",
         retiro_producto_mt,
         "producto",
         "retirado_mt",
@@ -1453,7 +1457,7 @@ def render_graficos_operativos_centro(self, graficos):
     self.crear_chart_barras(charts_grid, "Duracion por camion (min)", duracion_camion, "camion", "duracion_min", 3, 1)
     self.crear_chart_barras_interactivo_centro(
         charts_grid,
-        "Avance por bodega (%)",
+        f"Avance por bodega (%){sufijo_filtro}",
         avance_bodegas_descargado,
         "bodega_producto",
         "avance_pct",
