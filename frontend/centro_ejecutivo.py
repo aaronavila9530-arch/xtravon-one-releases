@@ -219,11 +219,23 @@ def show_centro_ejecutivo(self):
     self.centro_cuotas_tree = self.crear_tabla_centro(
         body,
         "Cuota vs descargado real",
-        ("cliente", "producto", "bodega", "stowage_mt", "cuota_mt", "retirado_mt", "diferencia_mt", "avance_pct", "origen"),
-        ("Cliente", "Producto", "Bodega", "Stowage MT", "Cuota MT", "Descargado MT", "Pendiente MT", "Avance %", "Origen"),
+        ("cliente", "producto", "bodega", "cuota_real_mt", "saldo_anterior_mt", "nueva_cuota_mt", "retirado_mt", "pendiente_mt", "avance_pct"),
+        ("Cliente", "Producto", "Bodega", "Cuota real", "Saldo anterior", "Nueva cuota", "Descargado", "Pendiente", "Avance"),
         side="top",
         height=8,
     )
+    for col, width in {
+        "cliente": 220,
+        "producto": 120,
+        "bodega": 140,
+        "cuota_real_mt": 130,
+        "saldo_anterior_mt": 140,
+        "nueva_cuota_mt": 130,
+        "retirado_mt": 130,
+        "pendiente_mt": 130,
+        "avance_pct": 100,
+    }.items():
+        self.centro_cuotas_tree.column(col, width=width)
     self.centro_alertas_tree = self.crear_tabla_centro(
         body,
         "Alertas operativas",
@@ -414,12 +426,12 @@ def analizar_operacion_centro(self, silencioso=False):
                     "producto": "Cuota general" if str(row.get("producto") or "").strip().upper() in ("", "TODOS", "ALL") else row.get("producto"),
                     "bodega": row.get("bodega") or row.get("bodega_numero") or "Todas",
                     "bodega_numeros": row.get("bodega_numeros") or [],
-                    "stowage_mt": self.safe_number(row.get("stowage_mt"), 0),
-                    "cuota_mt": self.safe_number(row.get("cuota_mt"), 0),
+                    "cuota_real_mt": self.safe_number(row.get("cuota_base_mt", row.get("cuota_mt")), 0),
+                    "saldo_anterior_mt": self.safe_number(row.get("saldo_anterior_mt"), 0),
+                    "nueva_cuota_mt": self.safe_number(row.get("cuota_mt"), 0),
                     "retirado_mt": self.safe_number(row.get("retirado_mt"), 0),
-                    "diferencia_mt": self.safe_number(row.get("faltante_mt"), 0),
+                    "pendiente_mt": self.safe_number(row.get("saldo_mt", row.get("faltante_mt")), 0),
                     "avance_pct": row.get("avance_pct", 0),
-                    "origen": row.get("origen_cuota", ""),
                 }
                 for row in clientes
                 if isinstance(row, dict)
@@ -1506,12 +1518,12 @@ def render_tablas_operativas_centro(self, cuotas, alertas):
                 row.get("cliente", ""),
                 row.get("producto", ""),
                 row.get("bodega") or row.get("bodega_numero") or "Todas",
-                self.formatear_numero(row.get("stowage_mt"), 2),
-                self.formatear_numero(row.get("cuota_mt"), 2),
+                self.formatear_numero(row.get("cuota_real_mt"), 2),
+                self.formatear_numero(row.get("saldo_anterior_mt"), 2),
+                self.formatear_numero(row.get("nueva_cuota_mt"), 2),
                 self.formatear_numero(row.get("retirado_mt"), 2),
-                self.formatear_numero(row.get("diferencia_mt"), 2),
+                self.formatear_numero(row.get("pendiente_mt"), 2),
                 f"{self.safe_number(row.get('avance_pct')):,.2f}%",
-                row.get("origen", ""),
             ),
         )
     for row in alertas:
