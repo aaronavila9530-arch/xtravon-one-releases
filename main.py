@@ -6722,55 +6722,6 @@ class ERPElSurcoApp(tk.Tk):
             messagebox.showwarning("Dato requerido", "Debe agregar al menos un producto.")
             return
 
-        cliente_pendiente = self.cuota_form_vars["cliente"].get().strip()
-        producto_pendiente = self.cuota_form_vars["producto"].get().strip()
-        bodega_pendiente = self.cuota_form_vars["bodega"].get().strip() or "Todas"
-        cuota_pendiente = self.cuota_form_vars["cuota"].get().strip()
-        unidad_pendiente = self.cuota_form_vars["unidad"].get().strip() or "MT"
-
-        if cliente_pendiente or cuota_pendiente:
-            if not cliente_pendiente:
-                messagebox.showwarning("Dato requerido", "Debe indicar el cliente de la cuota.")
-                return
-
-            if not cuota_pendiente:
-                messagebox.showwarning("Dato requerido", "Debe indicar la cuota del cliente.")
-                return
-
-            if not producto_pendiente:
-                messagebox.showwarning("Dato requerido", "Debe seleccionar el producto de la cuota.")
-                return
-
-            cuota_num = self.safe_number(cuota_pendiente, None)
-            if cuota_num is None or cuota_num <= 0:
-                messagebox.showwarning("Cuota invalida", "La cuota debe ser mayor a cero.")
-                return
-            saldo_anterior = self.obtener_saldo_anterior_cuota(cliente_pendiente, producto_pendiente)
-            cuota_final = max(cuota_num - saldo_anterior, 0)
-
-            existe_cliente = False
-            if self.cuotas_tree is not None:
-                for item in self.cuotas_tree.get_children():
-                    valores = self.cuotas_tree.item(item, "values")
-                    _id, cliente_actual, producto_actual, bodega_actual, _cuota, _unidad = self.normalizar_valores_cuota_tree(valores)
-                    if (
-                        cliente_actual.strip().lower() == cliente_pendiente.lower()
-                        and producto_actual.strip().lower() == producto_pendiente.lower()
-                        and self.bodega_cuota_payload(bodega_actual) == self.bodega_cuota_payload(bodega_pendiente)
-                    ):
-                        self.cuotas_tree.item(item, values=self.valores_cuota_tree("", cliente_pendiente, producto_pendiente, bodega_pendiente, cuota_num, unidad_pendiente, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"))
-                        existe_cliente = True
-                        break
-
-                if not existe_cliente:
-                    self.cuotas_tree.insert(
-                        "",
-                        "end",
-                        values=self.valores_cuota_tree("", cliente_pendiente, producto_pendiente, bodega_pendiente, cuota_num, unidad_pendiente, saldo_anterior=saldo_anterior, cuota_final=cuota_final, origen="MANUAL"),
-                    )
-
-                self.limpiar_form_cuota()
-
         cuotas = []
         if self.cuotas_tree is not None:
             cuotas_por_clave = {}
